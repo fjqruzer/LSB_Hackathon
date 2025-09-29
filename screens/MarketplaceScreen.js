@@ -11,16 +11,21 @@ import {
     Platform,
     ActivityIndicator,
     RefreshControl,
+    Animated,
   } from "react-native"
   import { Ionicons } from "@expo/vector-icons"
   import Constants from "expo-constants"
   import { useSafeAreaInsets } from "react-native-safe-area-context"
   import { useFonts } from 'expo-font'
-  import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore'
-  import { db } from '../config/firebase'
+import { useTheme } from '../contexts/ThemeContext'
+import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore'
+import { db } from '../config/firebase'
+import { useAuth } from '../contexts/AuthContext'
   
-  const Marketplace = () => {
+  const Marketplace = ({ onListingPress, onNavigateToFavorites }) => {
     const insets = useSafeAreaInsets()
+    const { user } = useAuth()
+    const { isDarkMode, colors } = useTheme()
     
     // Load Poppins fonts
     const [fontsLoaded] = useFonts({
@@ -36,14 +41,66 @@ import {
     const [refreshing, setRefreshing] = useState(false)
     const [activeTab, setActiveTab] = useState('all')
     const [searchQuery, setSearchQuery] = useState('')
+    const [countdownTimers, setCountdownTimers] = useState({}) // Store countdown for each listing
+    const [pulseAnimations, setPulseAnimations] = useState({}) // Store pulse animations for each listing
+    const [favorites, setFavorites] = useState([]) // Store user's favorite listing IDs
     
     // Use safe area insets for proper padding on all devices, with fallbacks
     const topPadding = insets.top || (Platform.OS === "ios" ? Constants.statusBarHeight : 0)
+
+    // Fetch user's favorites
+    const fetchFavorites = async () => {
+      if (!user) return;
+      
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setFavorites(userData.favorites || []);
+        }
+      } catch (error) {
+        console.error('Error fetching favorites:', error);
+      }
+    };
+
+    // Toggle favorite status
+    const toggleFavorite = async (listingId) => {
+      if (!user) return;
+      
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        const isFavorited = favorites.includes(listingId);
+        
+        if (isFavorited) {
+          // Remove from favorites
+          await updateDoc(userRef, {
+            favorites: arrayRemove(listingId)
+          });
+          setFavorites(prev => prev.filter(id => id !== listingId));
+        } else {
+          // Add to favorites
+          await updateDoc(userRef, {
+            favorites: arrayUnion(listingId)
+          });
+          setFavorites(prev => [...prev, listingId]);
+        }
+      } catch (error) {
+        console.error('Error toggling favorite:', error);
+      }
+    };
+
+    // Check if listing is favorited
+    const isFavorited = (listingId) => {
+      return favorites.includes(listingId);
+    };
 
     // Fetch listings from Firestore
     useEffect(() => {
       const fetchListings = () => {
         try {
+          // Fetch user's favorites first
+          fetchFavorites();
           // Simple query without composite index - just get all listings
           const q = query(collection(db, 'listings'))
           
@@ -86,8 +143,169 @@ import {
       }
     }, [])
 
+    // Update countdown timers for all listings
+    useEffect(() => {
+      if (listings.length === 0) return;
+
+      const updateAllTimers = () => {
+        const now = new Date();
+        const newTimers = {};
+
+        listings.forEach((listing) => {
+          if (!listing.endDateTime) {
+            newTimers[listing.id] = { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true };
+            return;
+          }
+
+          let endTime;
+
+          // Handle different date formats from Firebase
+          if (listing.endDateTime.toDate && typeof listing.endDateTime.toDate === 'function') {
+            // Firestore Timestamp
+            endTime = listing.endDateTime.toDate();
+          } else if (listing.endDateTime instanceof Date) {
+            // Already a Date object
+            endTime = listing.endDateTime;
+          } else if (typeof listing.endDateTime === 'string') {
+            // String date
+            endTime = new Date(listing.endDateTime);
+          } else if (listing.endDateTime.seconds) {
+            // Firestore Timestamp object
+            endTime = new Date(listing.endDateTime.seconds * 1000);
+          } else {
+            // Fallback: try to create date from the object
+            endTime = new Date(listing.endDateTime);
+          }
+
+          // Check if the date is valid
+          if (isNaN(endTime.getTime())) {
+            newTimers[listing.id] = { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true };
+            return;
+          }
+
+          const timeDiff = endTime - now;
+
+          if (timeDiff <= 0) {
+            // Listing has expired
+            newTimers[listing.id] = { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true };
+          } else {
+            // Calculate time remaining
+            const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+            newTimers[listing.id] = { days, hours, minutes, seconds, isExpired: false };
+          }
+        });
+
+        setCountdownTimers(newTimers);
+      };
+
+      // Update immediately
+      updateAllTimers();
+
+      // Update every second
+      const interval = setInterval(updateAllTimers, 1000);
+
+      return () => clearInterval(interval);
+    }, [listings]);
+
+    // Initialize pulse animations for listings
+    useEffect(() => {
+      const newPulseAnimations = {};
+      listings.forEach((listing) => {
+        if (!pulseAnimations[listing.id]) {
+          newPulseAnimations[listing.id] = new Animated.Value(1);
+        }
+      });
+      setPulseAnimations(prev => ({ ...prev, ...newPulseAnimations }));
+    }, [listings]);
+
+    // Manage pulse animations based on urgency
+    useEffect(() => {
+      Object.keys(pulseAnimations).forEach((listingId) => {
+        const urgency = getTimerUrgency(listingId);
+        const pulseAnim = pulseAnimations[listingId];
+        
+        if (!pulseAnim) return;
+
+        const startPulsing = () => {
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(pulseAnim, {
+                toValue: 1.1,
+                duration: 800,
+                useNativeDriver: true,
+              }),
+              Animated.timing(pulseAnim, {
+                toValue: 1,
+                duration: 800,
+                useNativeDriver: true,
+              }),
+            ])
+          ).start();
+        };
+
+        const stopPulsing = () => {
+          pulseAnim.stopAnimation();
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
+        };
+
+        if (urgency === 'critical') {
+          startPulsing();
+        } else {
+          stopPulsing();
+        }
+      });
+    }, [countdownTimers, pulseAnimations]);
+
     // Filter listings based on active tab and search
-    const filteredListings = listings.filter(listing => {
+    const filteredListings = React.useMemo(() => {
+      return listings.filter(listing => {
+      // Exclude listings where current user is the seller
+      if (user && listing.sellerId && user.uid === listing.sellerId) {
+        return false
+      }
+      
+      // Exclude locked/closed listings
+      if (listing.status === 'locked') {
+        return false
+      }
+      
+      // Exclude expired listings
+      const timer = countdownTimers[listing.id]
+      if (timer && timer.isExpired) {
+        return false
+      }
+      
+      // Also check expiration directly as fallback
+      if (listing.endDateTime) {
+        const now = new Date()
+        let endTime
+        
+        // Handle different date formats from Firebase
+        if (listing.endDateTime.toDate && typeof listing.endDateTime.toDate === 'function') {
+          endTime = listing.endDateTime.toDate()
+        } else if (listing.endDateTime instanceof Date) {
+          endTime = listing.endDateTime
+        } else if (typeof listing.endDateTime === 'string') {
+          endTime = new Date(listing.endDateTime)
+        } else if (listing.endDateTime.seconds) {
+          endTime = new Date(listing.endDateTime.seconds * 1000)
+        } else {
+          endTime = new Date(listing.endDateTime)
+        }
+        
+        if (!isNaN(endTime.getTime()) && endTime <= now) {
+          return false
+        }
+      }
+      
       let matchesTab = false
       
       switch (activeTab) {
@@ -95,10 +313,10 @@ import {
           matchesTab = true
           break
         case 'msl':
-          matchesTab = listing.priceType === 'msl'
+          matchesTab = listing?.priceType === 'msl'
           break
         case 'bidding':
-          matchesTab = listing.priceType === 'bidding'
+          matchesTab = listing?.priceType === 'bidding'
           break
         case 'following':
           // For now, show all listings. In the future, this would filter by followed users
@@ -118,35 +336,59 @@ import {
                            listing.brand.toLowerCase().includes(searchQuery.toLowerCase())
       
       return matchesTab && matchesSearch
-    })
+      })
+    }, [listings, user, countdownTimers, activeTab, searchQuery])
 
     // Helper functions
-    const formatTimeLeft = (endDateTime) => {
-      const now = new Date()
-      const end = endDateTime.toDate()
-      const diff = end - now
+    const isOwnListing = (listing) => {
+      return listing && listing.sellerId && user && user.uid === listing.sellerId;
+    };
+
+    const getTimerUrgency = (listingId) => {
+      const timer = countdownTimers[listingId];
       
-      if (diff <= 0) {
-        return 'Ended'
+      if (!timer || timer.isExpired) return 'expired';
+      
+      const { days, hours, minutes } = timer;
+      const totalMinutes = (days * 24 * 60) + (hours * 60) + minutes;
+      
+      if (totalMinutes <= 5) return 'critical'; // Last 5 minutes
+      if (totalMinutes <= 30) return 'warning'; // Last 30 minutes
+      if (totalMinutes <= 60) return 'caution'; // Last hour
+      return 'safe'; // More than 1 hour
+    };
+
+    const formatTimeLeft = (listingId) => {
+      const timer = countdownTimers[listingId];
+      
+      if (!timer) {
+        return 'Loading...';
       }
       
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      if (timer.isExpired) {
+        return 'EXPIRED';
+      }
+      
+      // Check for NaN values
+      if (isNaN(timer.days) || isNaN(timer.hours) || isNaN(timer.minutes) || isNaN(timer.seconds)) {
+        return 'Invalid Date';
+      }
+      
+      const { days, hours, minutes, seconds } = timer;
       
       if (days > 0) {
-        return `${days}d left`
+        return `${days}d ${hours}h ${minutes}m`;
       } else if (hours > 0) {
-        return `${hours}h left`
+        return `${hours}h ${minutes}m ${seconds}s`;
       } else if (minutes > 0) {
-        return `${minutes}m left`
+        return `${minutes}m ${seconds}s`;
       } else {
-        return 'Ending soon'
+        return `${seconds}s`;
       }
     }
 
     const getDisplayPrice = (listing) => {
-      if (listing.priceType === 'msl') {
+      if (listing?.priceType === 'msl') {
         return `PHP ${listing.minePrice}`
       } else {
         return `PHP ${listing.currentBid || listing.startingPrice}`
@@ -154,7 +396,7 @@ import {
     }
 
     const getStatusText = (listing) => {
-      return listing.priceType === 'msl' ? 'M-S-L' : 'Bidding'
+      return listing?.priceType === 'msl' ? 'M-S-L' : 'Bidding'
     }
 
     const onRefresh = () => {
@@ -163,12 +405,12 @@ import {
     }
 
     return (
-      <View style={[styles.container, { paddingTop: topPadding }]}>
+      <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
         <StatusBar 
-          style="dark" 
-          backgroundColor="#DFECE2"
+          style={isDarkMode ? "light" : "dark"} 
+          backgroundColor={colors.primary}
           translucent={Platform.OS === "android"}
-          barStyle="dark-content"
+          barStyle={isDarkMode ? "light-content" : "dark-content"}
           animated={true}
           hidden={false}
         />
@@ -196,7 +438,10 @@ import {
             />
           </View>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconButton}>
+            <TouchableOpacity 
+              style={styles.iconButton}
+              onPress={() => onNavigateToFavorites && onNavigateToFavorites()}
+            >
               <Ionicons name="heart-outline" size={24} color="#83AFA7" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconButton}>
@@ -278,20 +523,54 @@ import {
           ) : (
           <View style={styles.productGrid}>
               {filteredListings.map((listing) => (
-                <View key={listing.id} style={styles.productCard}>
+                <TouchableOpacity 
+                  key={listing.id} 
+                  style={styles.productCard}
+                  onPress={() => onListingPress && onListingPress(listing)}
+                >
                 <View style={styles.productImageContainer}>
                     <Image 
                       source={{ uri: listing.images && listing.images[0] ? listing.images[0] : 'https://via.placeholder.com/200x200?text=No+Image' }} 
                       style={styles.productImage} 
                     />
-                  <TouchableOpacity style={styles.favoriteButton}>
-                    <Ionicons name="heart-outline" size={20} color="#83AFA7" />
+                  <TouchableOpacity 
+                    style={styles.favoriteButton}
+                    onPress={() => toggleFavorite(listing.id)}
+                  >
+                    <Ionicons 
+                      name={isFavorited(listing.id) ? "heart" : "heart-outline"} 
+                      size={20} 
+                      color={isFavorited(listing.id) ? "#FF6B6B" : "#83AFA7"} 
+                    />
                   </TouchableOpacity>
-                  <View style={styles.timeLeftBadge}>
-                      <Text style={[styles.timeLeftText, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
-                        {formatTimeLeft(listing.endDateTime)}
+                  {isOwnListing(listing) && (
+                    <View style={styles.ownListingBadge}>
+                      <Text style={[styles.ownListingText, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+                        OWN
                       </Text>
                   </View>
+                  )}
+                  <Animated.View style={[
+                    styles.timeLeftBadge,
+                    getTimerUrgency(listing.id) === 'critical' && styles.timerBadgeCritical,
+                    getTimerUrgency(listing.id) === 'warning' && styles.timerBadgeWarning,
+                    getTimerUrgency(listing.id) === 'caution' && styles.timerBadgeCaution,
+                    getTimerUrgency(listing.id) === 'expired' && styles.timerBadgeExpired,
+                    getTimerUrgency(listing.id) === 'critical' && pulseAnimations[listing.id] && {
+                      transform: [{ scale: pulseAnimations[listing.id] }]
+                    }
+                  ]}>
+                      <Text style={[
+                        styles.timeLeftText, 
+                        { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined },
+                        getTimerUrgency(listing.id) === 'critical' && styles.timerTextCritical,
+                        getTimerUrgency(listing.id) === 'warning' && styles.timerTextWarning,
+                        getTimerUrgency(listing.id) === 'caution' && styles.timerTextCaution,
+                        getTimerUrgency(listing.id) === 'expired' && styles.timerTextExpired
+                      ]}>
+                        {formatTimeLeft(listing.id)}
+                      </Text>
+                  </Animated.View>
                 </View>
 
                 <View style={styles.productInfo}>
@@ -313,15 +592,24 @@ import {
                           {listing.sellerName ? listing.sellerName.charAt(0).toUpperCase() : 'A'}
                         </Text>
                       </View>
-                      <Text style={[styles.userName, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
-                        {listing.sellerName || 'Anonymous'}
-                      </Text>
+                      <View style={styles.userNameContainer}>
+                        <Text style={[styles.userName, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                          {listing.sellerName || 'Anonymous'}
+                        </Text>
+                        {isOwnListing(listing) && (
+                          <View style={styles.ownListingIndicator}>
+                            <Text style={[styles.ownListingIndicatorText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                              You
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                     <TouchableOpacity style={styles.moreButton}>
                       <Ionicons name="ellipsis-vertical" size={16} color="#83AFA7" />
                     </TouchableOpacity>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
           )}
@@ -333,7 +621,6 @@ import {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: "#DFECE2",
       ...(Platform.OS === "android" && {
         // Ensure proper handling on Android when app goes to background and returns
         elevation: 0,
@@ -470,6 +757,86 @@ import {
       color: "white",
       fontSize: 10,
       fontFamily: "Poppins-SemiBold",
+    },
+    // Timer urgency styles
+    timerBadgeCritical: {
+      backgroundColor: "#E53E3E",
+      shadowColor: "#E53E3E",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+      elevation: 5,
+    },
+    timerBadgeWarning: {
+      backgroundColor: "#F59E0B",
+      shadowColor: "#F59E0B",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+      elevation: 5,
+    },
+    timerBadgeCaution: {
+      backgroundColor: "#F97316",
+      shadowColor: "#F97316",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 3,
+      elevation: 4,
+    },
+    timerBadgeExpired: {
+      backgroundColor: "#6B7280",
+    },
+    timerTextCritical: {
+      color: "#FFFFFF",
+      fontWeight: "700",
+      fontSize: 11,
+    },
+    timerTextWarning: {
+      color: "#FFFFFF",
+      fontWeight: "600",
+      fontSize: 11,
+    },
+    timerTextCaution: {
+      color: "#FFFFFF",
+      fontWeight: "600",
+      fontSize: 10,
+    },
+    timerTextExpired: {
+      color: "#FFFFFF",
+      fontWeight: "600",
+      fontSize: 10,
+    },
+    ownListingBadge: {
+      position: "absolute",
+      bottom: 8,
+      right: 8,
+      backgroundColor: "#83AFA7",
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      zIndex: 2,
+    },
+    ownListingText: {
+      color: "#FFFFFF",
+      fontSize: 8,
+      fontWeight: "600",
+    },
+    userNameContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    ownListingIndicator: {
+      backgroundColor: "#83AFA7",
+      borderRadius: 6,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      marginLeft: 4,
+    },
+    ownListingIndicatorText: {
+      color: "#FFFFFF",
+      fontSize: 8,
+      fontWeight: "500",
     },
     productInfo: {
       padding: 12,

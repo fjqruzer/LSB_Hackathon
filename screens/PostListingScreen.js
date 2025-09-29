@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,14 +19,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { uploadMultipleImages } from '../config/cloudinary';
 import CustomPopup from '../components/CustomPopup';
+import StandardModal from '../components/StandardModal';
 
-const PostListingScreen = ({ navigation }) => {
+const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { isDarkMode, colors } = useTheme();
+  const { notifyNewListing } = useNotifications();
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -44,10 +49,19 @@ const PostListingScreen = ({ navigation }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
-  const [selectedPhotos, setSelectedPhotos] = useState([]);
+  const [renderKey, setRenderKey] = useState(0);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  
+  // Helper function to show error modal
+  const showError = (message) => {
+    setErrorMessage(message);
+    setShowErrorModal(true);
+  };
   
   // Popup state
   const [popup, setPopup] = useState({
@@ -94,7 +108,7 @@ const PostListingScreen = ({ navigation }) => {
   };
 
   // Helper function to show popup
-  const showPopup = (title, message, type = 'info', showCancel = false, onConfirm = null) => {
+  const showPopup = (title, message, type = 'info', showCancel = false, onConfirm = null, showButton = false) => {
     setPopup({
       visible: true,
       title,
@@ -102,6 +116,7 @@ const PostListingScreen = ({ navigation }) => {
       type,
       showCancel,
       onConfirm,
+      showButton,
     });
   };
 
@@ -112,9 +127,7 @@ const PostListingScreen = ({ navigation }) => {
   // Upload images to Cloudinary
   const uploadImages = async (images) => {
     try {
-      console.log('🔄 Starting Cloudinary upload for', images.length, 'images');
       const uploadedUrls = await uploadMultipleImages(images);
-      console.log('✅ Cloudinary upload completed:', uploadedUrls);
       return uploadedUrls;
     } catch (error) {
       console.error('❌ Cloudinary upload failed:', error);
@@ -157,17 +170,21 @@ const PostListingScreen = ({ navigation }) => {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setSelectedPhotos(prev => [...prev, result.assets[0].uri]);
+        const newPhoto = result.assets[0].uri;
+        const newPhotos = [...selectedPhotos, newPhoto];
+        setSelectedPhotos(newPhotos);
+        setRenderKey(prev => prev + 1);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.error('Error picking image:', error);
+      showError('Failed to pick image. Please try again.');
     }
   };
 
@@ -190,10 +207,15 @@ const PostListingScreen = ({ navigation }) => {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setSelectedPhotos(prev => [...prev, result.assets[0].uri]);
+        setSelectedPhotos(prev => {
+          const newPhotos = [...prev, result.assets[0].uri];
+          return newPhotos;
+        });
+        setRenderKey(prev => prev + 1);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+      console.error('Error taking photo:', error);
+      showError('Failed to take photo. Please try again.');
     }
   };
 
@@ -291,9 +313,7 @@ const PostListingScreen = ({ navigation }) => {
     try {
       // Upload images to Cloudinary first
       setUploadProgress(0);
-      console.log('Starting Cloudinary upload for', selectedPhotos.length, 'images');
       const uploadedImageUrls = await uploadImages(selectedPhotos);
-      console.log('Cloudinary URLs:', uploadedImageUrls);
       setUploadProgress(100);
       setIsUploading(false);
 
@@ -387,7 +407,8 @@ const PostListingScreen = ({ navigation }) => {
           
           // Navigate back
           navigation.goBack();
-        }
+        },
+        true // showButton = true
       );
 
     } catch (error) {
@@ -446,7 +467,14 @@ const PostListingScreen = ({ navigation }) => {
                 'Listing saved successfully! Note: Images may not be visible to other users due to upload issues.',
                 'success',
                 false,
-                () => {
+                async () => {
+                  // Send notification for new listing
+                  try {
+                    await notifyNewListing(formData.listingTitle, user.displayName || 'A seller');
+                  } catch (error) {
+                    console.error('Error sending notification:', error);
+                  }
+
                   // Reset form and navigate back
                   setFormData({
                     type: 'Bottoms',
@@ -488,22 +516,22 @@ const PostListingScreen = ({ navigation }) => {
   const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding }]}>
+    <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style="dark" 
-        backgroundColor="#DFECE2"
+        style={isDarkMode ? "light" : "dark"} 
+        backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle="dark-content"
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
         animated={true}
         hidden={false}
       />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color="#83AFA7" />
+          <Ionicons name="close" size={24} color={colors.accent} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+        <Text style={[styles.headerTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined, color: colors.accent }]}>
           Post Listing
         </Text>
         <View style={styles.headerSpacer} />
@@ -519,7 +547,7 @@ const PostListingScreen = ({ navigation }) => {
                     {/* Photo */}
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Photos</Text>
-            <View style={styles.photoContainer}>
+            <View key={renderKey} style={styles.photoContainer}>
               {selectedPhotos.map((photo, index) => (
                 <View key={index} style={styles.photoSlot}>
                   <Image 
@@ -841,7 +869,7 @@ const PostListingScreen = ({ navigation }) => {
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="white" />
               <Text style={[styles.submitButtonText, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined, marginLeft: 8 }]}>
-                {isUploading ? `Uploading images... ${uploadProgress}%` : 'Posting...'}
+                Posting...
               </Text>
             </View>
           ) : (
@@ -1005,15 +1033,28 @@ const PostListingScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Custom Popup */}
-      <CustomPopup
+      {/* Success Modal */}
+      <StandardModal
         visible={popup.visible}
         onClose={hidePopup}
         title={popup.title}
         message={popup.message}
-        type={popup.type}
-        showCancel={popup.showCancel}
-        onConfirm={popup.onConfirm}
+        confirmText="OK"
+        onConfirm={popup.onConfirm || hidePopup}
+        showCancel={false}
+        confirmButtonStyle="success"
+      />
+
+      {/* Error Modal */}
+      <StandardModal
+        visible={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        title="Error"
+        message={errorMessage}
+        confirmText="OK"
+        onConfirm={() => setShowErrorModal(false)}
+        showCancel={false}
+        confirmButtonStyle="primary"
       />
     </View>
   );
@@ -1022,7 +1063,6 @@ const PostListingScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#DFECE2',
   },
   header: {
     flexDirection: 'row',
@@ -1030,14 +1070,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#DFECE2',
   },
   closeButton: {
     padding: 4,
   },
   headerTitle: {
     fontSize: 18,
-    color: '#83AFA7',
   },
   headerSpacer: {
     width: 32,

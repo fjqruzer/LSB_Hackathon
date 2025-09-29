@@ -4,12 +4,12 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  updateProfile 
+  updateProfile,
+  deleteUser
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
-
-// Firebase references are properly imported
+import NotificationService from '../services/NotificationService';
 
 const AuthContext = createContext({});
 
@@ -73,6 +73,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Update push token after successful login
+      await updateUserPushToken(userCredential.user.uid);
+      
       return userCredential.user;
     } catch (error) {
       throw error;
@@ -83,6 +87,27 @@ export const AuthProvider = ({ children }) => {
     try {
       await signOut(auth);
     } catch (error) {
+      throw error;
+    }
+  };
+
+  // Delete user account completely (both Auth and Firestore)
+  const deleteUserAccount = async () => {
+    try {
+      if (!user) {
+        throw new Error('No user logged in');
+      }
+
+      // Delete user data from Firestore
+      await deleteDoc(doc(db, 'users', user.uid));
+      // Delete user from Firebase Auth
+      await deleteUser(user);
+      // Sign out the user
+      await signOut(auth);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting user account:', error);
       throw error;
     }
   };
@@ -127,6 +152,52 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update user's push notification token
+  const updateUserPushToken = async (uid) => {
+    try {
+      const pushToken = await NotificationService.registerForPushNotificationsAsync();
+      if (pushToken) {
+        // Only store actual push tokens, not placeholder values
+        if (pushToken !== 'local-notifications-enabled') {
+          await updateDoc(doc(db, 'users', uid), {
+            pushToken: pushToken,
+            pushTokenUpdatedAt: new Date()
+          });
+          } else {
+          // Store a flag that notifications are enabled
+          await updateDoc(doc(db, 'users', uid), {
+            notificationsEnabled: true,
+            pushTokenUpdatedAt: new Date()
+          });
+        }
+      } else {
+        }
+    } catch (error) {
+      console.error('❌ Error updating push token:', error);
+    }
+  };
+
+  // Force update push token (for testing)
+  const forceUpdatePushToken = async () => {
+    if (user) {
+      await updateUserPushToken(user.uid);
+    }
+  };
+
+  // Get user's push token
+  const getUserPushToken = async (uid) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        return userDoc.data().pushToken;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting user push token:', error);
+      return null;
+    }
+  };
+
   // Test function to verify Firestore connection
   const testFirestore = async () => {
     try {
@@ -152,10 +223,14 @@ export const AuthProvider = ({ children }) => {
     signup,
     login,
     logout,
+    deleteUserAccount,
     getUserProfile,
     testFirestore,
     checkEmailExists,
     checkUsernameExists,
+    updateUserPushToken,
+    forceUpdatePushToken,
+    getUserPushToken,
     loading
   };
 

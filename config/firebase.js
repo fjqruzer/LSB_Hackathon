@@ -15,59 +15,22 @@ const firebaseConfig = {
 
 // Initialize Firebase
 let app;
-try {
-  // Check if Firebase app is already initialized
-  if (getApps().length === 0) {
-    app = initializeApp(firebaseConfig);
-    console.log('Firebase app initialized');
-  } else {
-    app = getApp();
-    console.log('Firebase app already initialized, using existing instance');
-  }
-} catch (error) {
-  console.error('Firebase app initialization error:', error);
-  throw error;
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApp();
 }
 
-// Initialize Firebase Authentication and get a reference to the service
-let auth;
-try {
-  // Check if auth is already initialized
-  try {
-    auth = getAuth(app);
-    console.log('Firebase auth already initialized, using existing instance');
-  } catch (error) {
-    // If getAuth fails, initialize auth
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
-    console.log('Firebase auth initialized');
-  }
-} catch (error) {
-  console.error('Firebase auth initialization error:', error);
-  throw error;
-}
+// Initialize Firebase Authentication with persistence
+const auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
 
-// Initialize Firestore and get a reference to the service
-let db;
-try {
-  db = getFirestore(app);
-} catch (error) {
-  console.error('Firestore db initialization error:', error);
-  throw error;
-}
+// Initialize Firestore
+const db = getFirestore(app);
 
-// Initialize Firebase Storage and get a reference to the service
-let storage;
-try {
-  console.log('Initializing Firebase Storage...');
-  console.log('App instance:', app);
-  storage = getStorage(app, 'gs://copit-090603.firebasestorage.app');
-  console.log('Firebase Storage initialized successfully:', storage);
-} catch (error) {
-  console.error('Firebase storage initialization error:', error);
-  throw error;
-}
+// Initialize Firebase Storage
+const storage = getStorage(app, 'gs://copit-090603.firebasestorage.app');
 
 export { auth, db, storage };
 export default app;

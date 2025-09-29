@@ -1,11 +1,17 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import { useNotificationListener } from '../contexts/NotificationListenerContext';
+import { useAuth } from '../contexts/AuthContext';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
-const BottomNavigation = ({ currentScreen, onScreenChange, navigation }) => {
+const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const insets = useSafeAreaInsets();
+  const { unreadCount } = useNotificationListener();
+  const { user } = useAuth();
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -19,7 +25,7 @@ const BottomNavigation = ({ currentScreen, onScreenChange, navigation }) => {
     { id: 'marketplace', icon: 'storefront-outline', label: 'Market', activeIcon: 'storefront' },
     { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
     { id: 'add', icon: 'add', label: '', activeIcon: 'add' },
-    { id: 'updates', icon: 'trending-up-outline', label: 'Updates', activeIcon: 'trending-up' },
+    { id: 'updates', icon: 'notifications-outline', label: 'Updates', activeIcon: 'notifications' },
     { id: 'profile', icon: 'person-outline', label: 'Me', activeIcon: 'person' },
   ];
 
@@ -60,13 +66,39 @@ const BottomNavigation = ({ currentScreen, onScreenChange, navigation }) => {
     ],
   };
 
-  const handlePress = (screenId) => {
+  const handlePress = async (screenId) => {
     if (screenId === 'add') {
-      // Navigate to PostListingScreen
-      navigation.navigate('PostListing');
-    } else {
-      onScreenChange(screenId);
+      // Check if user has payment methods before allowing to post listing
+      if (user) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const paymentMethods = userData.paymentMethods || [];
+            if (paymentMethods.length === 0) {
+              Alert.alert(
+                'Payment Method Required',
+                'You need to add at least one payment method to post listings. Go to Profile > My Payment Methods to add one.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Add Payment Method', 
+                    onPress: () => onScreenChange('PaymentMethods')
+                  }
+                ]
+              );
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Error checking payment methods:', error);
+          Alert.alert('Error', 'Unable to verify payment methods. Please try again.');
+          return;
+        }
+      }
     }
+    onScreenChange(screenId);
   };
 
   return (
@@ -94,11 +126,20 @@ const BottomNavigation = ({ currentScreen, onScreenChange, navigation }) => {
             style={styles.bottomNavItem}
             onPress={() => handlePress(item.id)}
           >
+            <View style={styles.iconContainer}>
             <Ionicons
               name={isActive ? item.activeIcon : item.icon}
               size={20}
               color={isActive ? '#F68652' : 'white'}
             />
+              {item.id === 'updates' && unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text 
               style={[
                 styles.bottomNavText, 
@@ -180,6 +221,28 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconContainer: {
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#F68652',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#83AFA7',
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontFamily: 'Poppins-Bold',
+    textAlign: 'center',
   },
 });
 

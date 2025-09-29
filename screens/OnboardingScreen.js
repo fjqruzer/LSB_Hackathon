@@ -25,7 +25,7 @@ const COLORS = {
 
 const { width } = Dimensions.get('window');
 
-const OnboardingScreen = ({ navigation }) => {
+const OnboardingScreen = ({ onComplete }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const scrollViewRef = useRef(null);
 
@@ -48,23 +48,11 @@ const OnboardingScreen = ({ navigation }) => {
     try {
       // Mark onboarding as completed
       await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-      console.log('✅ Onboarding marked as completed');
-      // Navigate to signup
-      navigation.navigate('Signup');
+      if (onComplete) {
+        onComplete();
+      }
     } catch (error) {
       console.error('Error saving onboarding completion:', error);
-      // Still navigate even if saving fails
-      navigation.navigate('Signup');
-    }
-  };
-
-  // Utility function to reset onboarding (for testing purposes)
-  const resetOnboarding = async () => {
-    try {
-      await AsyncStorage.removeItem('hasCompletedOnboarding');
-      console.log('🔄 Onboarding reset - will show on next launch');
-    } catch (error) {
-      console.error('Error resetting onboarding:', error);
     }
   };
 

@@ -19,8 +19,12 @@ const CustomPopup = ({
   onClose, 
   title, 
   message, 
+  subtitle,
   type = 'info', // 'success', 'error', 'warning', 'info', 'bid', 'steal', 'lock'
   showCancel = false,
+  showButton = false,
+  buttonText = 'OK',
+  onPress,
   onConfirm,
   confirmText = 'OK',
   cancelText = 'Cancel'
@@ -111,7 +115,9 @@ const CustomPopup = ({
   const theme = getThriftTheme();
 
   const handleConfirm = () => {
-    if (onConfirm) {
+    if (onPress) {
+      onPress();
+    } else if (onConfirm) {
       onConfirm();
     }
     onClose();
@@ -136,7 +142,7 @@ const CustomPopup = ({
             </View>
             <View style={styles.titleContainer}>
               <Text style={[styles.title, { fontFamily: fontsLoaded ? 'Poppins-Bold' : undefined, color: theme.accentColor }]}>
-                {theme.title}
+                {title || theme.title}
               </Text>
               <Text style={[styles.subtitle, { fontFamily: fontsLoaded ? 'Poppins-Medium' : undefined, color: theme.color }]}>
                 {theme.subtext}
@@ -149,9 +155,15 @@ const CustomPopup = ({
             <Text style={[styles.message, { fontFamily: fontsLoaded ? 'Poppins-Regular' : undefined }]}>
               {message}
             </Text>
+            {subtitle && (
+              <Text style={[styles.subtitle, { fontFamily: fontsLoaded ? 'Poppins-Medium' : undefined, marginTop: 8 }]}>
+                {subtitle}
+              </Text>
+            )}
           </View>
 
           {/* Action Buttons */}
+          {(showButton || showCancel) && (
           <View style={styles.buttonContainer}>
             {showCancel && (
               <TouchableOpacity 
@@ -164,15 +176,18 @@ const CustomPopup = ({
               </TouchableOpacity>
             )}
             
+              {(showButton || !showCancel) && (
             <TouchableOpacity 
               style={[styles.button, styles.confirmButton, { backgroundColor: theme.accentColor }]}
               onPress={handleConfirm}
             >
               <Text style={[styles.confirmButtonText, { fontFamily: fontsLoaded ? 'Poppins-SemiBold' : undefined }]}>
-                {confirmText}
+                    {buttonText || confirmText}
               </Text>
             </TouchableOpacity>
+              )}
           </View>
+          )}
 
           {/* Bottom Decorative Element */}
           <View style={styles.bottomDecoration}>

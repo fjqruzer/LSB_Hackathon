@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+.git/
+*.log
+.DS_Store
+Thumbs.db
+android-build/
+dist/
+*.apk
+*.aab

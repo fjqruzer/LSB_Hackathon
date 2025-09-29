@@ -1,11 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, StatusBar, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, StatusBar, Platform, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import { useNavigation } from '@react-navigation/native';
+import { useNotificationListener } from '../contexts/NotificationListenerContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const UpdatesScreen = () => {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { notifications, unreadCount, markAsRead, clearAllNotifications } = useNotificationListener();
+  const { isDarkMode, colors } = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -20,44 +27,111 @@ const UpdatesScreen = () => {
     return null;
   }
 
-  const updates = [
-    {
-      id: 1,
-      type: 'bid',
-      title: 'New bid on your item',
-      description: 'Someone bid PHP 450 on your backpack',
-      time: '2 minutes ago',
-      image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=60&h=60&fit=crop',
-      unread: true,
-    },
-    {
-      id: 2,
-      type: 'sale',
-      title: 'Item sold successfully',
-      description: 'Your vintage jacket sold for PHP 800',
-      time: '1 hour ago',
-      image: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=60&h=60&fit=crop',
-      unread: false,
-    },
-    {
-      id: 3,
-      type: 'promotion',
-      title: 'Flash sale alert',
-      description: '50% off on all electronics today only',
-      time: '3 hours ago',
-      image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?w=60&h=60&fit=crop',
-      unread: true,
-    },
-    {
-      id: 4,
-      type: 'system',
-      title: 'Welcome to COPit!',
-      description: 'Start exploring our marketplace',
-      time: '1 day ago',
-      image: null,
-      unread: false,
-    },
-  ];
+  // Format time ago
+  const formatTimeAgo = (date) => {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return 'Just now';
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    } else if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else {
+      const days = Math.floor(diffInSeconds / 86400);
+      return `${days} day${days > 1 ? 's' : ''} ago`;
+    }
+  };
+
+  // Get notification icon based on type
+  const getNotificationIcon = (type, action) => {
+    if (action) {
+      switch (action) {
+        case 'Mined': return 'diamond-outline';
+        case 'Stole': return 'flash-outline';
+        case 'Locked': return 'lock-closed-outline';
+        case 'Bid': return 'card-outline';
+        default: return 'notifications-outline';
+      }
+    }
+    
+    switch (type) {
+      case 'listing_action': return 'notifications-outline';
+      case 'new_bid': return 'card-outline';
+      case 'payment_required': return 'card-outline';
+      case 'payment_reminder': return 'time-outline';
+      case 'winner_determined': return 'trophy-outline';
+      case 'listing_expired_lost': return 'close-circle-outline';
+      case 'no_winner': return 'information-circle-outline';
+      case 'payment_timeout_no_buyers': return 'close-circle-outline';
+      default: return 'notifications-outline';
+    }
+  };
+
+  // Get notification color based on action and type
+  const getNotificationColor = (action, type) => {
+    if (action) {
+      switch (action) {
+        case 'Mined': return '#4CAF50';
+        case 'Stole': return '#FF9800';
+        case 'Locked': return '#2196F3';
+        case 'Bid': return '#9C27B0';
+        default: return '#83AFA7';
+      }
+    }
+    
+    switch (type) {
+      case 'payment_required': return '#FF5722';
+      case 'payment_reminder': return '#FF9800';
+      case 'winner_determined': return '#4CAF50';
+      case 'listing_expired_lost': return '#9E9E9E';
+      case 'no_winner': return '#607D8B';
+      case 'payment_timeout_no_buyers': return '#F44336';
+      default: return '#83AFA7';
+    }
+  };
+
+  // Handle refresh
+  const onRefresh = () => {
+    setRefreshing(true);
+    // The notifications will automatically refresh via the listener
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  // Handle notification press
+  const handleNotificationPress = (notification) => {
+    // Mark as read
+    markAsRead(notification.id);
+    
+    
+    // Handle different notification types
+    if (notification.data?.type === 'payment_required' || notification.data?.type === 'payment_reminder') {
+      
+      // Navigate to payment screen
+      navigation.navigate('Payment', {
+        listingId: notification.data.listingId,
+        actionType: notification.data.actionType,
+        price: notification.data.amount,
+      });
+    } else if (notification.data?.listingId) {
+      // Navigate to listing details
+      }
+  };
+
+  // Use real notifications from context
+  const updates = notifications.map(notification => ({
+    id: notification.id,
+    type: notification.data?.type || notification.type || 'general',
+    title: notification.title,
+    description: notification.body,
+    time: formatTimeAgo(notification.createdAt),
+    action: notification.data?.action,
+    listingId: notification.data?.listingId,
+    unread: !notification.read,
+  }));
 
   const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
 
@@ -82,20 +156,37 @@ const UpdatesScreen = () => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding }]}>
+    <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style="dark" 
-        backgroundColor="#FEF4D8"
+        style={isDarkMode ? "light" : "dark"} 
+        backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle="dark-content"
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
         animated={true}
         hidden={false}
       />
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Updates</Text>
-        <Text style={styles.headerSubtitle}>Stay informed about your activity</Text>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.headerTitle, { color: colors.accent }]}>Updates</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Stay informed about your activity</Text>
+        </View>
+        <View style={styles.headerRight}>
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{unreadCount}</Text>
+            </View>
+          )}
+          {notifications.length > 0 && (
+            <TouchableOpacity 
+              style={styles.clearButton}
+              onPress={clearAllNotifications}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.accent} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Content */}
@@ -103,6 +194,14 @@ const UpdatesScreen = () => {
         style={styles.content} 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#83AFA7']}
+            tintColor="#83AFA7"
+          />
+        }
       >
         {/* Quick Actions */}
         <View style={styles.section}>
@@ -132,16 +231,30 @@ const UpdatesScreen = () => {
         {/* Updates List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Updates</Text>
-          {updates.map((update) => (
-            <TouchableOpacity key={update.id} style={[styles.updateCard, update.unread && styles.unreadCard]}>
+          {updates.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="notifications-outline" size={48} color="#CCC" />
+              <Text style={styles.emptyTitle}>No notifications yet</Text>
+              <Text style={styles.emptyDescription}>You'll see updates about your listings and activity here</Text>
+            </View>
+          ) : (
+            updates.map((update) => (
+              <TouchableOpacity 
+                key={update.id} 
+                style={[styles.updateCard, update.unread && styles.unreadCard]}
+                onPress={() => handleNotificationPress(update)}
+              >
               <View style={styles.updateIcon}>
-                {update.image ? (
-                  <Image source={{ uri: update.image }} style={styles.updateImage} />
-                ) : (
-                  <View style={[styles.iconContainer, { backgroundColor: getIconColor(update.type) + '20' }]}>
-                    <Ionicons name={getIconForType(update.type)} size={24} color={getIconColor(update.type)} />
+                  <View style={[
+                    styles.iconContainer, 
+                    { backgroundColor: getNotificationColor(update.action, update.type) + '20' }
+                  ]}>
+                    <Ionicons 
+                      name={getNotificationIcon(update.type, update.action)} 
+                      size={24} 
+                      color={getNotificationColor(update.action, update.type)} 
+                    />
                   </View>
-                )}
               </View>
               <View style={styles.updateContent}>
                 <View style={styles.updateHeader}>
@@ -155,31 +268,10 @@ const UpdatesScreen = () => {
                 <Ionicons name="chevron-forward" size={20} color="#CCC" />
               </TouchableOpacity>
             </TouchableOpacity>
-          ))}
+            ))
+          )}
         </View>
 
-        {/* Statistics */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>This Week</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>12</Text>
-              <Text style={styles.statLabel}>New Bids</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>5</Text>
-              <Text style={styles.statLabel}>Items Sold</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>8</Text>
-              <Text style={styles.statLabel}>Messages</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>3</Text>
-              <Text style={styles.statLabel}>Promotions</Text>
-            </View>
-          </View>
-        </View>
       </ScrollView>
     </View>
   );
@@ -188,39 +280,41 @@ const UpdatesScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FEF4D8',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FEF4D8',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontFamily: 'Poppins-Bold',
-    color: '#83AFA7',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-Regular',
-    color: '#666',
+  },
+  headerLeft: {
+    flex: 1,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 16,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   quickActions: {
     flexDirection: 'row',
@@ -231,21 +325,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
-    elevation: 2,
+    marginBottom: 6,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   actionText: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Medium',
     color: '#333',
     textAlign: 'center',
@@ -253,32 +347,32 @@ const styles = StyleSheet.create({
   updateCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
     alignItems: 'center',
-    elevation: 2,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   unreadCard: {
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderLeftColor: '#F68652',
   },
   updateIcon: {
-    marginRight: 16,
+    marginRight: 12,
   },
   updateImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -288,63 +382,72 @@ const styles = StyleSheet.create({
   updateHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   updateTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
     flex: 1,
   },
   unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: '#F68652',
   },
   updateDescription: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-Regular',
     color: '#666',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   updateTime: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#999',
   },
   updateAction: {
+    padding: 6,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  badge: {
+    backgroundColor: '#F68652',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: 'Poppins-Bold',
+  },
+  clearButton: {
     padding: 8,
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: '48%',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+  emptyState: {
     alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingVertical: 40,
   },
-  statNumber: {
-    fontSize: 24,
-    fontFamily: 'Poppins-Bold',
-    color: '#F68652',
+  emptyTitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#666',
+    marginTop: 12,
     marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Poppins-Medium',
-    color: '#666',
+  emptyDescription: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#999',
     textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });
 

@@ -1,71 +1,271 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Platform, View, ActivityIndicator } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import { NotificationListenerProvider } from './contexts/NotificationListenerContext';
+import { NotificationNavigationProvider, useNotificationNavigation } from './contexts/NotificationNavigationContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import OnboardingScreen from './screens/OnboardingScreen';
-import SignupScreen from './screens/SignupScreen';
 import LoginScreen from './screens/LoginScreen';
-import MainAppScreen from './screens/MainAppScreen';
+import SignupScreen from './screens/SignupScreen';
 import MainNavigation from './components/MainNavigation';
-import PostListingScreen from './screens/PostListingScreen';
-import { AuthProvider } from './contexts/AuthContext';
+import NotificationService from './services/NotificationService';
+import ExpirationNotificationService from './services/ExpirationNotificationService';
+import ExpirationCheckService from './services/ExpirationCheckService';
 
-const Stack = createStackNavigator();
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
-export default function App() {
+const AuthStack = createStackNavigator();
+
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator 
+      initialRouteName="Login"
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: true,
+        cardStyleInterpolator: ({ current, layouts }) => {
+          return {
+            cardStyle: {
+              transform: [
+                {
+                  translateX: current.progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [layouts.screen.width, 0],
+                  }),
+                },
+              ],
+            },
+          };
+        },
+      }}
+    >
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Signup" component={SignupScreen} />
+    </AuthStack.Navigator>
+  );
+}
+
+// Suppress Expo notifications warnings and errors
+const originalWarn = console.warn;
+const originalError = console.error;
+
+console.warn = (...args) => {
+  const message = args[0]?.toString() || '';
+  if (message.includes('expo-notifications') || 
+      message.includes('reading dataString is deprecated') ||
+      message.includes('not fully supported in Expo Go') ||
+      message.includes('We recommend you instead use a development build')) {
+    return;
+  }
+  originalWarn.apply(console, args);
+};
+
+console.error = (...args) => {
+  const message = args[0]?.toString() || '';
+  if (message.includes('expo-notifications') ||
+      message.includes('Android Push notifications') ||
+      message.includes('was removed from Expo Go') ||
+      message.includes('Use a development build instead')) {
+    return;
+  }
+  originalError.apply(console, args);
+};
+
+function AppNavigator() {
+  const { user, loading } = useAuth();
+  const { handleNotificationClick } = useNotificationNavigation();
   const [isFirstLaunch, setIsFirstLaunch] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [onboardingLoading, setOnboardingLoading] = useState(true);
+
+  // Initialize notifications and expiration check service
+  useEffect(() => {
+    const initializeServices = async () => {
+      try {
+        const token = await NotificationService.registerForPushNotificationsAsync();
+        
+        if (token && token !== 'local-notifications-enabled' && token !== 'No token' && user) {
+          // Save push token to user profile
+          try {
+            const { doc, setDoc } = await import('firebase/firestore');
+            const { db } = await import('./config/firebase');
+            await setDoc(doc(db, 'users', user.uid), {
+              pushToken: token,
+              lastUpdated: new Date()
+            }, { merge: true });
+          } catch (error) {
+            console.error('❌ Error saving push token to user profile:', error);
+          }
+        } else {
+          // Set a placeholder to indicate no push token available
+          if (user) {
+            try {
+              const { doc, setDoc } = await import('firebase/firestore');
+              const { db } = await import('./config/firebase');
+              await setDoc(doc(db, 'users', user.uid), {
+                pushToken: 'No token',
+                lastUpdated: new Date()
+              }, { merge: true });
+            } catch (error) {
+              console.error('❌ Error setting placeholder token:', error);
+            }
+          }
+        }
+        
+        // Start expiration check service
+        ExpirationCheckService.start();
+      } catch (error) {
+        console.error('Error initializing services:', error);
+      }
+    };
+
+    initializeServices();
+    
+    // Cleanup on unmount
+    return () => {
+      ExpirationCheckService.stop();
+    };
+  }, [user]);
+
+  // Set up notification response listener for direct navigation
+  useEffect(() => {
+    const setupNotificationListener = async () => {
+      try {
+        const { addNotificationResponseReceivedListener } = await import('expo-notifications');
+        
+        const responseListener = addNotificationResponseReceivedListener(response => {
+          const data = response.notification.request.content.data;
+          
+          // Handle navigation using context
+          if (data && data.type === 'payment_required' && data.listingId) {
+            handleNotificationClick(data);
+          }
+        });
+        
+        return () => {
+          responseListener.remove();
+        };
+      } catch (error) {
+        console.error('Error setting up notification listener:', error);
+      }
+    };
+    
+    const cleanup = setupNotificationListener();
+    return () => {
+      if (cleanup) {
+        cleanup.then(cleanupFn => cleanupFn && cleanupFn());
+      }
+    };
+  }, []);
 
   useEffect(() => {
+    const checkOnboardingStatus = async () => {
+      try {
+        const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+        setIsFirstLaunch(hasCompletedOnboarding !== 'true');
+        setOnboardingLoading(false);
+        await SplashScreen.hideAsync();
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
+        setIsFirstLaunch(true);
+        setOnboardingLoading(false);
+        await SplashScreen.hideAsync();
+      }
+    };
+
     checkOnboardingStatus();
   }, []);
 
-  const checkOnboardingStatus = async () => {
-    try {
-      const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-      setIsFirstLaunch(hasCompletedOnboarding === null);
-    } catch (error) {
-      console.error('Error checking onboarding status:', error);
-      setIsFirstLaunch(true); // Default to showing onboarding if there's an error
-    } finally {
-      setIsLoading(false);
-    }
+  const handleOnboardingComplete = () => {
+    const checkStatus = async () => {
+      try {
+        const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+        setIsFirstLaunch(hasCompletedOnboarding !== 'true');
+        setOnboardingLoading(false);
+      } catch (error) {
+        console.error('Error re-checking onboarding status:', error);
+        setIsFirstLaunch(false);
+        setOnboardingLoading(false);
+      }
+    };
+    checkStatus();
   };
 
-  if (isLoading) {
+  // Show loading screen while checking onboarding status or auth loading
+  if (onboardingLoading || loading || isFirstLaunch === null) {
     return (
-      <SafeAreaProvider>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEF4D8' }}>
-          <ActivityIndicator size="large" color="#83AFA7" />
-        </View>
-      </SafeAreaProvider>
+      <View style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f0f0f0'
+      }}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{
+          fontSize: 18,
+          color: '#333',
+          marginTop: 20,
+          textAlign: 'center'
+        }}>
+          Loading...
+        </Text>
+      </View>
     );
   }
 
-  return (
-    <SafeAreaProvider>
-      <AuthProvider>
+  // Render the appropriate screen based on state
+  if (isFirstLaunch === true) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <NavigationContainer>
           <StatusBar style="auto" />
-          <Stack.Navigator
-            initialRouteName={isFirstLaunch ? "Onboarding" : "MainApp"}
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-            <Stack.Screen name="Signup" component={SignupScreen} />
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="MainApp" component={MainAppScreen} />
-            <Stack.Screen name="MainNavigation" component={MainNavigation} />
-            <Stack.Screen name="PostListing" component={PostListingScreen} />
-          </Stack.Navigator>
+          <OnboardingScreen onComplete={handleOnboardingComplete} />
         </NavigationContainer>
-      </AuthProvider>
+      </GestureHandlerRootView>
+    );
+  } else if (user) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <NavigationContainer>
+          <StatusBar style="auto" />
+          <MainNavigation />
+        </NavigationContainer>
+      </GestureHandlerRootView>
+    );
+  } else {
+  return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <NavigationContainer>
+          <StatusBar style="auto" />
+          <AuthNavigator />
+        </NavigationContainer>
+      </GestureHandlerRootView>
+    );
+  }
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <NotificationListenerProvider>
+              <NotificationNavigationProvider>
+              <AppNavigator />
+              </NotificationNavigationProvider>
+            </NotificationListenerProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

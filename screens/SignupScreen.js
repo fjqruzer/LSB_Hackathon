@@ -130,8 +130,6 @@ const SignupScreen = ({ navigation }) => {
     return false;
   };
 
-
-
   const handleFieldChange = async (fieldName, value) => {
     // Update the field value first
     switch (fieldName) {
@@ -299,15 +297,8 @@ const SignupScreen = ({ navigation }) => {
             lastName: lastName.trim()
           };
           
-          console.log('SignupScreen - About to call signup with data:');
-          console.log('Email:', email.trim());
-          console.log('Display Name:', displayName);
-          console.log('User Data:', userData);
-          
           await signup(email.trim(), password, displayName, userData);
-          console.log('Signup successful, navigating to MainNavigation');
-          // Success - navigate to main app
-          navigation.navigate('MainNavigation');
+          // Success - navigation to main app happens automatically via AuthContext
         } catch (error) {
           let errorMessage = 'An error occurred during signup';
           
@@ -329,21 +320,14 @@ const SignupScreen = ({ navigation }) => {
     }
   };
 
-    const handleSignUpLater = () => {
-      // Handle sign up later logic here
-      console.log('Sign up later pressed');
+  const handleSignUpLater = () => {
+    // Handle sign up later logic here
   };
 
   return (
       <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <MaterialIcons name="arrow-back" size={24} color={COLORS.teal} />
-        </TouchableOpacity>
         </View>
 
         {/* Logo and Title Container */}
@@ -566,7 +550,6 @@ const SignupScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-        
       </SafeAreaView>
   );
 };
@@ -584,12 +567,6 @@ const styles = StyleSheet.create({
       paddingTop: 30,
     paddingBottom: 30,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    },
     logoTitleContainer: {
       alignItems: 'center',
       paddingHorizontal: 30,

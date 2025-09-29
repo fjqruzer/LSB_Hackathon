@@ -54,8 +54,6 @@ const LoginScreen = ({ navigation }) => {
     return null;
   };
 
-
-
   const handleFieldChange = (fieldName, value) => {
     // Update the field value first
     switch (fieldName) {
@@ -124,7 +122,7 @@ const LoginScreen = ({ navigation }) => {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      navigation.navigate('MainNavigation');
+      // Navigation to main app happens automatically via AuthContext
     } catch (error) {
       let errorMessage = 'An error occurred during login';
       
@@ -146,7 +144,6 @@ const LoginScreen = ({ navigation }) => {
 
   const handleForgotPassword = () => {
     // Handle forgot password logic here
-    console.log('Forgot password pressed');
   };
 
   const handleSignUp = async () => {
@@ -164,12 +161,6 @@ const LoginScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons name="arrow-back" size={24} color={COLORS.teal} />
-        </TouchableOpacity>
       </View>
 
       {/* Logo and Title Container */}
@@ -269,13 +260,12 @@ const LoginScreen = ({ navigation }) => {
         {/* Sign In Later */}
         <TouchableOpacity 
           style={styles.signInLaterButton}
-          onPress={() => console.log('Sign in later pressed')}
+          onPress={() => {}}
         >
           <Text style={styles.signInLaterText}>Sign In Later</Text>
         </TouchableOpacity>
       </View>
 
-      
     </SafeAreaView>
   );
 };
@@ -292,12 +282,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 30,
     paddingBottom: 30,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   logoTitleContainer: {
     alignItems: 'center',

@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, StatusBar,
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import { useTheme } from '../contexts/ThemeContext';
 
 const PeopleScreen = () => {
   const insets = useSafeAreaInsets();
+  const { isDarkMode, colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   
@@ -162,20 +164,20 @@ const PeopleScreen = () => {
   const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding }]}>
+    <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style="dark" 
-        backgroundColor="#FEF4D8"
+        style={isDarkMode ? "light" : "dark"} 
+        backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle="dark-content"
+        barStyle={isDarkMode ? "light-content" : "dark-content"}
         animated={true}
         hidden={false}
       />
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>People</Text>
-        <Text style={styles.headerSubtitle}>Connect with sellers and buyers</Text>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.headerTitle, { color: colors.accent }]}>People</Text>
+        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Connect with sellers and buyers</Text>
         
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -363,80 +365,76 @@ const PeopleScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FEF4D8',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FEF4D8',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontFamily: 'Poppins-Bold',
-    color: '#83AFA7',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-Regular',
-    color: '#666',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 16,
   },
   section: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   featuredCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
-    elevation: 4,
+    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
   featuredImage: {
     width: '100%',
-    height: 200,
+    height: 150,
     resizeMode: 'cover',
   },
   featuredContent: {
-    padding: 20,
+    padding: 16,
   },
   featuredTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   featuredDescription: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-Regular',
     color: '#666',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   featuredButton: {
     backgroundColor: '#F68652',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     alignSelf: 'flex-start',
   },
   featuredButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-Medium',
   },
   usersGrid: {
@@ -447,24 +445,24 @@ const styles = StyleSheet.create({
   userCard: {
     width: '48%',
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   userHeader: {
     position: 'relative',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   userAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     resizeMode: 'cover',
   },
   verifiedBadge: {
@@ -472,121 +470,121 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     backgroundColor: '#4CAF50',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderRadius: 8,
+    width: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   userInfo: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   userName: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   userUsername: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#83AFA7',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   userStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   statText: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: 'Poppins-Regular',
     color: '#666',
-    marginLeft: 4,
+    marginLeft: 3,
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   ratingText: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#666',
-    marginLeft: 4,
+    marginLeft: 3,
   },
   followButton: {
     backgroundColor: '#83AFA7',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     alignSelf: 'center',
   },
   followButtonText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Medium',
   },
   sellersList: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
+    borderRadius: 8,
+    padding: 12,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   sellerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
   sellerRank: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#F68652',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   rankNumber: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-Bold',
   },
   sellerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     resizeMode: 'cover',
-    marginRight: 12,
+    marginRight: 10,
   },
   sellerInfo: {
     flex: 1,
   },
   sellerName: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   sellerUsername: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#83AFA7',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   sellerSales: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#666',
   },
@@ -595,10 +593,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sellerRatingText: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#666',
-    marginLeft: 4,
+    marginLeft: 3,
   },
   communityGrid: {
     flexDirection: 'row',
@@ -608,119 +606,127 @@ const styles = StyleSheet.create({
   communityCard: {
     width: '48%',
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
     alignItems: 'center',
-    elevation: 2,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   communityIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#F0F8F6',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   communityTitle: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 2,
     textAlign: 'center',
   },
   communitySubtitle: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: 'Poppins-Regular',
     color: '#666',
     textAlign: 'center',
   },
   // Search styles
   searchContainer: {
-    marginTop: 16,
+    marginTop: 12,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
-    borderRadius: 25,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    elevation: 2,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 10,
+    height: Platform.OS === 'ios' ? 40 : 44,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-Regular',
     color: '#333',
+    paddingVertical: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    ...(Platform.OS === 'android' && {
+      height: '100%',
+      lineHeight: 14,
+    }),
   },
   clearButton: {
     marginLeft: 8,
   },
   // Search results styles
   searchResultsHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FEF4D8',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#DFECE2',
   },
   searchResultsTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
   },
   searchResultsContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   searchResultCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
   },
   searchResultHeader: {
     position: 'relative',
-    marginRight: 16,
+    marginRight: 12,
   },
   searchResultAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     resizeMode: 'cover',
   },
   searchResultInfo: {
     flex: 1,
   },
   searchResultName: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   searchResultUsername: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Poppins-Regular',
     color: '#83AFA7',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   searchResultStats: {
     flexDirection: 'row',

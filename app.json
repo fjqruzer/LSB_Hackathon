@@ -6,23 +6,34 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.copit.COPit",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "aps-environment": "development"
+      }
+    },
+    "notification": {
+      "color": "#83AFA7",
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new interactions"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "pan",
-      "allowBackup": true
+      "allowBackup": true,
+      "package": "com.copit.COPit"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,6 +42,9 @@
       "eas": {
         "projectId": "3091af27-cc4b-407b-99aa-0deccf56f8de"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
