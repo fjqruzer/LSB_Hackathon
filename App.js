@@ -21,6 +21,7 @@ import MainNavigation from './components/MainNavigation';
 import NotificationService from './services/NotificationService';
 import ExpirationNotificationService from './services/ExpirationNotificationService';
 import ExpirationCheckService from './services/ExpirationCheckService';
+import PaymentTimeoutService from './services/PaymentTimeoutService';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from './config/firebase';
 
@@ -166,7 +167,6 @@ function AppNavigator() {
         ExpirationCheckService.start();
         
         // Start expired payment cleanup service
-        const { default: PaymentTimeoutService } = await import('./services/PaymentTimeoutService');
         PaymentTimeoutService.startExpiredPaymentCleanup();
       } catch (error) {
         console.error('Error initializing services:', error);
