@@ -3,14 +3,12 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, Alert } f
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import { useAuth } from '../contexts/AuthContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const insets = useSafeAreaInsets();
-  const { unreadCount } = useNotificationListener();
   const { user } = useAuth();
   
   // State for PLUS button expansion
@@ -26,9 +24,9 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   
   const navItems = [
     { id: 'marketplace', icon: 'storefront-outline', label: 'Market', activeIcon: 'storefront' },
-    { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
+    { id: 'foryou', icon: 'sparkles-outline', label: 'For You', activeIcon: 'sparkles' },
     { id: 'plus', icon: 'add', label: '', activeIcon: 'add' },
-    { id: 'updates', icon: 'notifications-outline', label: 'Updates', activeIcon: 'notifications' },
+    { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
     { id: 'profile', icon: 'person-outline', label: 'Me', activeIcon: 'person' },
   ];
 
@@ -253,13 +251,6 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
               size={20}
               color={isActive ? '#F68652' : 'white'}
             />
-              {item.id === 'updates' && unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Text>
-                </View>
-              )}
             </View>
             <Text 
               style={[

@@ -21,6 +21,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, arrayUnion, arrayRemove, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { useAuth } from '../contexts/AuthContext'
+import { useNotificationListener } from '../contexts/NotificationListenerContext'
 import RealTimeActionListener from '../services/RealTimeActionListener'
 import ActionAlertService from '../services/ActionAlertService'
 import ChatService from '../services/ChatService'
@@ -29,6 +30,7 @@ import ChatService from '../services/ChatService'
     const insets = useSafeAreaInsets()
     const { user } = useAuth()
     const { isDarkMode, colors } = useTheme()
+    const { unreadCount: notificationUnreadCount } = useNotificationListener()
     
     // Load Poppins fonts
     const [fontsLoaded] = useFonts({
@@ -538,6 +540,19 @@ import ChatService from '../services/ChatService'
             />
           </View>
           <View style={styles.headerIcons}>
+            <TouchableOpacity 
+              style={styles.iconButton}
+              onPress={() => navigation && navigation.navigate('updates')}
+            >
+              <Ionicons name="notifications-outline" size={24} color="#83AFA7" />
+              {notificationUnreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.iconButton}
               onPress={() => onNavigateToFavorites && onNavigateToFavorites()}
