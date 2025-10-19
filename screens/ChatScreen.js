@@ -12,7 +12,10 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -46,6 +49,20 @@ const ChatScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const flatListRef = useRef(null);
+
+  // Map and location state
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [mapRegion, setMapRegion] = useState({
+    latitude: 14.5995,
+    longitude: 120.9842,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+  const [selectedPin, setSelectedPin] = useState(null); // { latitude, longitude }
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [liveSharing, setLiveSharing] = useState(false);
+  const liveWatcherRef = useRef(null);
+  const [liveLocations, setLiveLocations] = useState({}); // userId -> { latitude, longitude, updatedAt }
 
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -88,6 +105,20 @@ const ChatScreen = ({ navigation, route }) => {
     });
 
     return () => unsubscribe();
+  }, [chatId]);
+
+  // Subscribe to live locations in this chat
+  useEffect(() => {
+    if (!chatId) return;
+    const locRef = collection(db, 'chats', chatId, 'liveLocations');
+    const unsub = onSnapshot(locRef, (snapshot) => {
+      const map = {};
+      snapshot.forEach((docSnap) => {
+        map[docSnap.id] = docSnap.data();
+      });
+      setLiveLocations(map);
+    });
+    return () => unsub();
   }, [chatId]);
 
   // Mark messages as read
@@ -188,6 +219,129 @@ const ChatScreen = ({ navigation, route }) => {
     }
   };
 
+  const sendLocationMessage = async (coordinate) => {
+    if (!coordinate || sending) return;
+    try {
+      setSending(true);
+      let currentChatId = chatId;
+      if (!currentChatId) {
+        const chat = await ChatService.createOrGetChat(user.uid, otherUser.id, listing);
+        if (!chat) throw new Error('Failed to create chat');
+        currentChatId = chat.id;
+      }
+      const chatRef = doc(db, 'chats', currentChatId);
+      const chatDoc = await getDoc(chatRef);
+      if (!chatDoc.exists()) {
+        await setDoc(chatRef, {
+          participants: [user.uid, otherUser.id],
+          createdAt: serverTimestamp(),
+          lastActivity: serverTimestamp(),
+          lastMessage: '',
+          lastMessageTime: null,
+          unreadCount: {
+            [user.uid]: 0,
+            [otherUser.id]: 0,
+          },
+          listing: listing ? {
+            id: listing.id,
+            title: listing.title,
+            price: ChatService.getDisplayPrice(listing),
+            image: listing.image,
+          } : null,
+        });
+      }
+      await addDoc(collection(db, 'chats', currentChatId, 'messages'), {
+        senderId: user.uid,
+        senderName: user.displayName || user.email,
+        type: 'location',
+        coordinate,
+        timestamp: serverTimestamp(),
+        read: false,
+      });
+      await updateDoc(chatRef, {
+        lastMessage: '[Location]',
+        lastMessageTime: serverTimestamp(),
+        [`unreadCount.${otherUser.id}`]: (otherUser.unreadCount || 0) + 1,
+        lastActivity: serverTimestamp(),
+      });
+      setShowMapModal(false);
+      setSelectedPin(null);
+    } catch (e) {
+      console.error('Error sending location:', e);
+      Alert.alert('Error', 'Failed to send location. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const ensureLocationPermission = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Location permission is required.');
+      return false;
+    }
+    return true;
+  };
+
+  const openMapModal = async () => {
+    const ok = await ensureLocationPermission();
+    if (!ok) return;
+    try {
+      setGettingLocation(true);
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setMapRegion((prev) => ({
+        ...prev,
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      }));
+    } catch (e) {
+      // keep default
+    } finally {
+      setGettingLocation(false);
+      setShowMapModal(true);
+    }
+  };
+
+  const toggleLiveLocation = async () => {
+    if (!liveSharing) {
+      const ok = await ensureLocationPermission();
+      if (!ok) return;
+      try {
+        const watcher = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 5 },
+          async (pos) => {
+            try {
+              if (!chatId) return; // require existing chat
+              await setDoc(doc(db, 'chats', chatId, 'liveLocations', user.uid), {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+                updatedAt: Date.now(),
+              });
+            } catch (err) {
+              // ignore transient
+            }
+          }
+        );
+        liveWatcherRef.current = watcher;
+        setLiveSharing(true);
+      } catch (e) {
+        Alert.alert('Error', 'Unable to start live location.');
+      }
+    } else {
+      try {
+        if (liveWatcherRef.current) {
+          liveWatcherRef.current.remove();
+          liveWatcherRef.current = null;
+        }
+        if (chatId) {
+          await updateDoc(doc(db, 'chats', chatId, 'liveLocations', user.uid), { stoppedAt: Date.now() }).catch(() => {});
+        }
+      } finally {
+        setLiveSharing(false);
+      }
+    }
+  };
+
   const sendQuickMessage = async (message) => {
     setNewMessage(message);
     await sendMessage();
@@ -201,6 +355,81 @@ const ChatScreen = ({ navigation, route }) => {
 
   const renderMessage = ({ item }) => {
     const isMe = item.senderId === user.uid;
+    if (item.type === 'listing' && item.listing) {
+      return (
+        <View style={[
+          styles.messageContainer,
+          isMe ? styles.myMessage : styles.otherMessage
+        ]}>
+          <View style={[
+            styles.listingBubble,
+            isMe ? styles.myBubble : styles.otherBubble,
+          ]}>
+            <View style={styles.listingCardMsg}>
+              {item.listing.image ? (
+                <Image source={{ uri: item.listing.image }} style={styles.listingMsgImage} />
+              ) : (
+                <View style={[styles.listingMsgImage, { backgroundColor: '#EEE' }]} />
+              )}
+              <View style={styles.listingMsgInfo}>
+                <Text style={[styles.listingMsgTitle, { color: colors.text }]} numberOfLines={1}>
+                  {item.listing.title}
+                </Text>
+                {item.listing.price ? (
+                  <Text style={[styles.listingMsgPrice, { color: colors.accent }]}>
+                    {item.listing.price}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        </View>
+      );
+    }
+    if (item.type === 'location' && item.coordinate) {
+      return (
+        <View style={[
+          styles.messageContainer,
+          isMe ? styles.myMessage : styles.otherMessage
+        ]}>
+          <View style={[
+            styles.locationBubble,
+            isMe ? styles.myBubble : styles.otherBubble,
+          ]}>
+            <View style={styles.locationPreview}>
+              <MapView
+                style={styles.locationMap}
+                initialRegion={{
+                  latitude: item.coordinate.latitude,
+                  longitude: item.coordinate.longitude,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }}
+                pointerEvents="none"
+              >
+                <Marker coordinate={item.coordinate} />
+              </MapView>
+            </View>
+            <TouchableOpacity
+              style={[styles.openMapButton, { backgroundColor: colors.accent }]}
+              onPress={() => {
+                setMapRegion({
+                  latitude: item.coordinate.latitude,
+                  longitude: item.coordinate.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                });
+                setSelectedPin(item.coordinate);
+                setShowMapModal(true);
+              }}
+            >
+              <Ionicons name="map" size={14} color="white" />
+              <Text style={styles.openMapText}>Open Map</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
     
     return (
       <View style={[
@@ -318,7 +547,7 @@ const ChatScreen = ({ navigation, route }) => {
           </View>
         </View>
         
-        <TouchableOpacity style={styles.moreButton}>
+        <TouchableOpacity style={styles.moreButton} onPress={openMapModal}>
           <Ionicons name="ellipsis-vertical" size={24} color={colors.accent} />
         </TouchableOpacity>
       </View>
@@ -395,7 +624,87 @@ const ChatScreen = ({ navigation, route }) => {
             <Ionicons name="send" size={20} color="white" />
           )}
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.iconButton, { backgroundColor: colors.accent }]}
+          onPress={openMapModal}
+        >
+          <Ionicons name="pin" size={18} color="white" />
+        </TouchableOpacity>
       </View>
+
+      {/* Map Modal for pinning and viewing */}
+      <Modal
+        visible={showMapModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowMapModal(false);
+          setSelectedPin(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.mapModal}>
+            <View style={[styles.modalHeader, { borderBottomColor: '#E0E0E0' }]}>
+              <Text style={[styles.modalTitle, { fontFamily: fontsLoaded ? 'Poppins-SemiBold' : undefined }]}>Meetup Location</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={() => { setShowMapModal(false); setSelectedPin(null); }}>
+                <Ionicons name="close" size={20} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                initialRegion={mapRegion}
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion}
+                onPress={(e) => setSelectedPin(e.nativeEvent.coordinate)}
+              >
+                {selectedPin && (<Marker coordinate={selectedPin} />)}
+                {Object.entries(liveLocations).map(([uid, loc]) => (
+                  <Marker
+                    key={uid}
+                    coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+                    pinColor={uid === user.uid ? 'green' : 'red'}
+                    title={uid === user.uid ? 'You' : otherUser.name || 'Participant'}
+                  />
+                ))}
+              </MapView>
+              {gettingLocation && (
+                <View style={styles.mapLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#83AFA7" />
+                  <Text style={styles.mapLoadingText}>Fetching your location…</Text>
+                </View>
+              )}
+            </View>
+            <View style={[styles.modalActions, { borderTopColor: '#E0E0E0' }]}> 
+              <TouchableOpacity
+                style={[styles.modalActionButton, styles.rejectButton]}
+                onPress={async () => {
+                  const ok = await ensureLocationPermission();
+                  if (!ok) return;
+                  try {
+                    setGettingLocation(true);
+                    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                    setMapRegion((prev) => ({ ...prev, latitude: pos.coords.latitude, longitude: pos.coords.longitude }));
+                  } finally {
+                    setGettingLocation(false);
+                  }
+                }}
+              >
+                <Ionicons name="locate" size={16} color="white" />
+                <Text style={styles.modalActionText}>My Location</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={!selectedPin}
+                style={[styles.modalActionButton, styles.approveButton, { opacity: selectedPin ? 1 : 0.5 }]}
+                onPress={() => selectedPin && sendLocationMessage(selectedPin)}
+              >
+                <Ionicons name="checkmark" size={16} color="white" />
+                <Text style={styles.modalActionText}>Send Pin</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -591,6 +900,166 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.5,
+  },
+  // Map modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  mapModal: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    overflow: 'hidden',
+  },
+  mapContainer: {
+    height: 350,
+    width: '100%',
+    backgroundColor: '#EEE',
+  },
+  map: {
+    flex: 1,
+  },
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.6)'
+  },
+  mapLoadingText: {
+    marginTop: 8,
+    color: '#333',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  closeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    backgroundColor: 'white',
+    gap: 10,
+  },
+  modalActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  approveButton: {
+    backgroundColor: '#83AFA7',
+  },
+  rejectButton: {
+    backgroundColor: '#F68652',
+  },
+  modalActionText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // Location message preview
+  locationBubble: {
+    maxWidth: '80%',
+    padding: 6,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+  },
+  locationPreview: {
+    width: 220,
+    height: 140,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  locationMap: {
+    flex: 1,
+  },
+  openMapButton: {
+    flexDirection: 'row',
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginTop: 6,
+  },
+  openMapText: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // Listing message styles
+  listingBubble: {
+    maxWidth: '80%',
+    padding: 6,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+  },
+  listingCardMsg: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 260,
+  },
+  listingMsgImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  listingMsgInfo: {
+    flex: 1,
+  },
+  listingMsgTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  listingMsgPrice: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
   },
 });
 

@@ -881,6 +881,49 @@ const PaymentScreen = ({ navigation, route }) => {
         
         // Notify seller about payment update
         await notifySellerPaymentSubmitted(listingData, user, actionType, displayPrice);
+
+        // Ensure chat exists between buyer and seller; send an initial message
+        try {
+          const sellerId = listingData.sellerId || listingData.userId;
+          if (sellerId) {
+            const chat = await ChatService.createOrGetChat(user.uid, sellerId, {
+              id: listingData.id,
+              title: listingData.title,
+              price: ChatService.getDisplayPrice(listingData),
+              image: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
+            });
+            if (chat?.id) {
+              await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+                senderId: user.uid,
+                senderName: user.displayName || user.email,
+                text: `Payment proof submitted for "${listingData.title || 'item'}" (${actionType})`,
+                timestamp: serverTimestamp(),
+                read: false,
+                type: 'text',
+              });
+              await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+                senderId: user.uid,
+                senderName: user.displayName || user.email,
+                type: 'listing',
+                listing: {
+                  id: listingData.id,
+                  title: listingData.title || 'Item',
+                  image: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
+                  price: ChatService.getDisplayPrice(listingData),
+                },
+                timestamp: serverTimestamp(),
+                read: false,
+              });
+              await updateDoc(doc(db, 'chats', chat.id), {
+                lastMessage: `Payment proof submitted for "${listingData.title || 'item'}" (${actionType})`,
+                lastMessageTime: serverTimestamp(),
+                lastActivity: serverTimestamp(),
+              });
+            }
+          }
+        } catch (chatErr) {
+          console.error('❌ Error creating chat after payment submission:', chatErr);
+        }
         
       } else {
         // Get listing data to ensure we have sellerId
@@ -908,6 +951,7 @@ const PaymentScreen = ({ navigation, route }) => {
           sellerId: listingData.sellerId || listingData.userId || '',
           listingTitle: listingData.title || 'Unknown Item',
           listingImage: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
+          listingDealMethod: listingData.dealMethod || null,
           actionType,
           amount: displayPrice,
           paymentMethod: selectedPaymentMethod.bankName,
@@ -941,6 +985,49 @@ const PaymentScreen = ({ navigation, route }) => {
         
         // Notify seller about payment submission
         await notifySellerPaymentSubmitted(listingData, user, actionType, displayPrice);
+
+        // Ensure chat exists between buyer and seller; send an initial message
+        try {
+          const sellerId = listingData.sellerId || listingData.userId;
+          if (sellerId) {
+            const chat = await ChatService.createOrGetChat(user.uid, sellerId, {
+              id: listingData.id,
+              title: listingData.title,
+              price: ChatService.getDisplayPrice(listingData),
+              image: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
+            });
+            if (chat?.id) {
+              await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+                senderId: user.uid,
+                senderName: user.displayName || user.email,
+                text: `Payment proof submitted for "${listingData.title || 'item'}" (${actionType})`,
+                timestamp: serverTimestamp(),
+                read: false,
+                type: 'text',
+              });
+              await addDoc(collection(db, 'chats', chat.id, 'messages'), {
+                senderId: user.uid,
+                senderName: user.displayName || user.email,
+                type: 'listing',
+                listing: {
+                  id: listingData.id,
+                  title: listingData.title || 'Item',
+                  image: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
+                  price: ChatService.getDisplayPrice(listingData),
+                },
+                timestamp: serverTimestamp(),
+                read: false,
+              });
+              await updateDoc(doc(db, 'chats', chat.id), {
+                lastMessage: `Payment proof submitted for "${listingData.title || 'item'}" (${actionType})`,
+                lastMessageTime: serverTimestamp(),
+                lastActivity: serverTimestamp(),
+              });
+            }
+          }
+        } catch (chatErr) {
+          console.error('❌ Error creating chat after payment submission:', chatErr);
+        }
       }
 
       await updateDoc(doc(db, 'listings', listingId), {

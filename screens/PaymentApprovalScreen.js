@@ -14,6 +14,8 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -39,6 +41,17 @@ const PaymentApprovalScreen = ({ navigation }) => {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [showZoomModal, setShowZoomModal] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState('');
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null); // { latitude, longitude }
+  const [mapRegion, setMapRegion] = useState({
+    latitude: 14.5995, // Default to Manila
+    longitude: 120.9842,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [requiresMeetupLocation, setRequiresMeetupLocation] = useState(false);
+  const [currentListing, setCurrentListing] = useState(null);
 
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -115,9 +128,52 @@ const PaymentApprovalScreen = ({ navigation }) => {
     fetchPayments();
   };
 
-  const handleApprove = (payment) => {
+  const handleApprove = async (payment) => {
     setSelectedPayment(payment);
+    try {
+      // Prefer deal method from payment if present to avoid fetch
+      let isMeetup = payment.listingDealMethod === 'meetup';
+      let listingData = null;
+
+      if (payment.listingDealMethod == null) {
+        // Fetch listing to check dealMethod when not embedded in payment
+        const listingRef = doc(db, 'listings', payment.listingId);
+        const listingSnap = await getDoc(listingRef);
+        listingData = listingSnap.exists() ? { id: listingSnap.id, ...listingSnap.data() } : null;
+        isMeetup = listingData?.dealMethod === 'meetup';
+      }
+
+      setCurrentListing(listingData);
+      setRequiresMeetupLocation(!!isMeetup);
+
+      if (isMeetup) {
+        setShowLocationModal(true);
+        // Try to center map to user's current location
+        (async () => {
+          try {
+            setGettingLocation(true);
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              setMapRegion((prev) => ({
+                ...prev,
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              }));
+            }
+          } catch (e) {
+            // graceful fallback to default region
+          } finally {
+            setGettingLocation(false);
+          }
+        })();
+      } else {
     setShowApproveModal(true);
+      }
+    } catch (err) {
+      console.error('Error loading listing for approval:', err);
+      setShowApproveModal(true);
+    }
   };
 
   const handleReject = (payment) => {
@@ -145,17 +201,30 @@ const PaymentApprovalScreen = ({ navigation }) => {
     if (!selectedPayment) return;
 
     try {
+      // If meetup is required, ensure a location is selected
+      if (requiresMeetupLocation && !selectedLocation) {
+        showError('Please select a meetup location on the map before approving.');
+        return;
+      }
+
       const paymentRef = doc(db, 'payments', selectedPayment.id);
       await updateDoc(paymentRef, {
         status: 'approved',
         approvedAt: new Date(),
         approvedBy: user.uid,
+        ...(requiresMeetupLocation && selectedLocation
+          ? { meetupLocation: { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude } }
+          : {}),
       });
 
       // Send notification to buyer
       await sendNotificationToBuyer('payment_approved', selectedPayment);
 
       setShowApproveModal(false);
+      setShowLocationModal(false);
+      setRequiresMeetupLocation(false);
+      setSelectedLocation(null);
+      setCurrentListing(null);
       setSelectedPayment(null);
     } catch (error) {
       console.error('Error approving payment:', error);
@@ -452,7 +521,7 @@ const PaymentApprovalScreen = ({ navigation }) => {
         visible={showApproveModal}
         onClose={() => setShowApproveModal(false)}
         title="Approve Payment"
-        message={`Are you sure you want to approve this payment of ${selectedPayment ? formatCurrency(selectedPayment.amount || 0) : ''}?`}
+        message={`Are you sure you want to approve this payment of ${selectedPayment ? formatCurrency(selectedPayment.amount || 0) : ''}?${requiresMeetupLocation ? '\n\nDeal method is meetup. The selected location will be saved.' : ''}`}
         confirmText="Approve"
         cancelText="Cancel"
         onConfirm={confirmApprove}
@@ -472,6 +541,98 @@ const PaymentApprovalScreen = ({ navigation }) => {
         showCancel={true}
         confirmButtonStyle="danger"
       />
+
+      {/* Meetup Location Picker Modal */}
+      <Modal
+        visible={showLocationModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowLocationModal(false);
+          setRequiresMeetupLocation(false);
+          setSelectedLocation(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.locationModal}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: '#E0E0E0' }]}>
+              <Text style={[styles.modalTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>Select Meetup Location</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  setShowLocationModal(false);
+                  setRequiresMeetupLocation(false);
+                  setSelectedLocation(null);
+                }}
+              >
+                <Ionicons name="close" size={20} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Map */}
+            <View style={styles.mapContainer}>
+              <MapView
+                style={styles.map}
+                initialRegion={mapRegion}
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion}
+                onPress={(e) => {
+                  const { latitude, longitude } = e.nativeEvent.coordinate;
+                  setSelectedLocation({ latitude, longitude });
+                }}
+              >
+                {selectedLocation && (
+                  <Marker coordinate={selectedLocation} />
+                )}
+              </MapView>
+              {gettingLocation && (
+                <View style={styles.mapLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#83AFA7" />
+                  <Text style={[styles.loadingText, { fontFamily: fontsLoaded ? 'Poppins-Regular' : undefined }]}>Fetching your location…</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Actions */}
+            <View style={[styles.modalActions, { borderTopColor: '#E0E0E0' }]}> 
+              <TouchableOpacity
+                style={[styles.modalActionButton, styles.rejectButton]}
+                onPress={async () => {
+                  // Recenters to current location if permission granted
+                  try {
+                    setGettingLocation(true);
+                    const { status } = await Location.requestForegroundPermissionsAsync();
+                    if (status === 'granted') {
+                      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                      setMapRegion((prev) => ({
+                        ...prev,
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                      }));
+                    }
+                  } catch (e) {
+                    // ignore
+                  } finally {
+                    setGettingLocation(false);
+                  }
+                }}
+              >
+                <Ionicons name="locate" size={16} color="white" />
+                <Text style={[styles.modalActionText, { fontFamily: fontsLoaded ? 'Poppins-Medium' : undefined }]}>Use My Location</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                disabled={!selectedLocation}
+                style={[styles.modalActionButton, styles.approveButton, { opacity: selectedLocation ? 1 : 0.5 }]}
+                onPress={confirmApprove}
+              >
+                <Ionicons name="checkmark" size={16} color="white" />
+                <Text style={[styles.modalActionText, { fontFamily: fontsLoaded ? 'Poppins-Medium' : undefined }]}>Confirm Location</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Payment Details Modal */}
       <Modal
@@ -862,6 +1023,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  locationModal: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    overflow: 'hidden',
+  },
+  mapContainer: {
+    height: 350,
+    width: '100%',
+    backgroundColor: '#EEE',
+  },
+  map: {
+    flex: 1,
+  },
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.6)'
   },
   modalHeader: {
     flexDirection: 'row',

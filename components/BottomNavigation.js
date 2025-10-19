@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,9 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const { unreadCount } = useNotificationListener();
   const { user } = useAuth();
   
+  // State for PLUS button expansion
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
     'Poppins-Regular': require('../assets/fonts/Poppins-Regular.ttf'),
@@ -24,14 +27,16 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const navItems = [
     { id: 'marketplace', icon: 'storefront-outline', label: 'Market', activeIcon: 'storefront' },
     { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
-    { id: 'LiveStreams', icon: 'videocam-outline', label: 'Live', activeIcon: 'videocam' },
-    { id: 'add', icon: 'add', label: '', activeIcon: 'add' },
+    { id: 'plus', icon: 'add', label: '', activeIcon: 'add' },
     { id: 'updates', icon: 'notifications-outline', label: 'Updates', activeIcon: 'notifications' },
     { id: 'profile', icon: 'person-outline', label: 'Me', activeIcon: 'person' },
   ];
 
-  // Animation value for the floating effect
+  // Animation values
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const expandAnim = useRef(new Animated.Value(0)).current;
+  const circle1Anim = useRef(new Animated.Value(0)).current;
+  const circle2Anim = useRef(new Animated.Value(0)).current;
 
   // Start the continuous floating animation
   useEffect(() => {
@@ -67,7 +72,41 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
     ],
   };
 
+  // Animation for expanding circles
+  const toggleExpansion = () => {
+    const toValue = isExpanded ? 0 : 1;
+    setIsExpanded(!isExpanded);
+    
+    Animated.parallel([
+      Animated.spring(expandAnim, {
+        toValue,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+      }),
+      Animated.spring(circle1Anim, {
+        toValue,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+        delay: toValue ? 100 : 0,
+      }),
+      Animated.spring(circle2Anim, {
+        toValue,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 8,
+        delay: toValue ? 150 : 0,
+      }),
+    ]).start();
+  };
+
   const handlePress = async (screenId) => {
+    if (screenId === 'plus') {
+      toggleExpansion();
+      return;
+    }
+    
     if (screenId === 'add') {
       // Check if user has payment methods before allowing to post listing
       if (user) {
@@ -99,6 +138,17 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
         }
       }
     }
+    
+    // Close expansion when navigating to other screens
+    if (isExpanded) {
+      setIsExpanded(false);
+      Animated.parallel([
+        Animated.spring(expandAnim, { toValue: 0, useNativeDriver: true }),
+        Animated.spring(circle1Anim, { toValue: 0, useNativeDriver: true }),
+        Animated.spring(circle2Anim, { toValue: 0, useNativeDriver: true }),
+      ]).start();
+    }
+    
     onScreenChange(screenId);
   };
 
@@ -106,18 +156,88 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
     <View style={[styles.bottomNav, { paddingBottom: insets.bottom > 0 ? insets.bottom : 16 }]}>
       {navItems.map((item) => {
         const isActive = currentScreen === item.id;
-        const isAddButton = item.id === 'add';
+        const isPlusButton = item.id === 'plus';
         
-        if (isAddButton) {
+        if (isPlusButton) {
           return (
-            <Animated.View key={item.id} style={[styles.addButton, floatingStyle]}>
-              <TouchableOpacity 
-                style={styles.addButtonTouchable}
-                onPress={() => handlePress(item.id)}
+            <View key={item.id} style={styles.plusButtonContainer}>
+              {/* Expanding circles */}
+              <Animated.View 
+                style={[
+                  styles.expandingCircle,
+                  styles.circle1,
+                  {
+                    opacity: circle1Anim,
+                    transform: [
+                      {
+                        scale: circle1Anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 1],
+                        }),
+                      },
+                      {
+                        translateY: circle1Anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, -80],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
               >
-                <Ionicons name={item.icon} size={28} color="white" />
-              </TouchableOpacity>
-            </Animated.View>
+                <TouchableOpacity 
+                  style={styles.circleButton}
+                  onPress={() => handlePress('LiveStreams')}
+                >
+                  <Ionicons name="videocam" size={24} color="white" />
+                </TouchableOpacity>
+              </Animated.View>
+
+              <Animated.View 
+                style={[
+                  styles.expandingCircle,
+                  styles.circle2,
+                  {
+                    opacity: circle2Anim,
+                    transform: [
+                      {
+                        scale: circle2Anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 1],
+                        }),
+                      },
+                      {
+                        translateY: circle2Anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, -80],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <TouchableOpacity 
+                  style={styles.circleButton}
+                  onPress={() => handlePress('add')}
+                >
+                  <Ionicons name="add" size={24} color="white" />
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Main PLUS button */}
+              <Animated.View style={[styles.addButton, floatingStyle]}>
+                <TouchableOpacity 
+                  style={styles.addButtonTouchable}
+                  onPress={() => handlePress(item.id)}
+                >
+                  <Ionicons 
+                    name={isExpanded ? 'close' : item.icon} 
+                    size={28} 
+                    color="white" 
+                  />
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           );
         }
 
@@ -200,6 +320,11 @@ const styles = StyleSheet.create({
   activeText: {
     color: '#F68652',
   },
+  plusButtonContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addButton: {
     backgroundColor: '#F68652',
     borderRadius: 30,
@@ -218,6 +343,35 @@ const styles = StyleSheet.create({
     }),
   },
   addButtonTouchable: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandingCircle: {
+    position: 'absolute',
+    backgroundColor: '#F68652',
+    borderRadius: 25,
+    width: 50,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    ...(Platform.OS === 'android' && {
+      elevation: 6,
+    }),
+  },
+  circle1: {
+    left: -25,
+  },
+  circle2: {
+    right: -25,
+  },
+  circleButton: {
     width: '100%',
     height: '100%',
     alignItems: 'center',
