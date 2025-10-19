@@ -26,7 +26,7 @@ import StandardModal from '../components/StandardModal';
 const MyShopScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { isDarkMode, colors } = useTheme();
+  const { colors } = useTheme();
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -342,10 +342,10 @@ const MyShopScreen = ({ navigation }) => {
   return (
     <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style={isDarkMode ? "light" : "dark"} 
+        style="dark" 
         backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        barStyle="dark-content"
         animated={true}
         hidden={false}
       />
@@ -580,6 +580,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 24,
   },
   createButton: {
     flexDirection: 'row',

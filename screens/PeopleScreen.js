@@ -5,13 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import { collection, doc, setDoc, deleteDoc, getDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const PeopleScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { isDarkMode, colors } = useTheme();
+  const { colors } = useTheme();
   const { user } = useAuth();
+  const { unreadCount: notificationUnreadCount } = useNotificationListener();
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState('discover'); // 'discover', 'following', 'followers'
@@ -285,18 +287,78 @@ const PeopleScreen = ({ navigation }) => {
   return (
     <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style={isDarkMode ? "light" : "dark"} 
+        style="dark" 
         backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        barStyle="dark-content"
         animated={true}
         hidden={false}
       />
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <Image
+          source={{
+            uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-uzcx2rUT6ee8nzIBhYHxhd0BdCkXUF.png",
+          }}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#83AFA7" style={styles.searchIcon} />
+          <TextInput
+            style={[
+              styles.searchInput,
+              { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }
+            ]}
+            placeholder="Search people..."
+            placeholderTextColor="#83AFA7"
+            value={searchQuery}
+            onChangeText={handleSearch}
+            returnKeyType="search"
+            multiline={false}
+            textAlign="left"
+            textAlignVertical="center"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
+              <Ionicons name="close-circle" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation && navigation.navigate('updates')}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#83AFA7" />
+            {notificationUnreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation && navigation.navigate('MyFavorites')}
+          >
+            <Ionicons name="heart-outline" size={24} color="#83AFA7" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation && navigation.navigate('messages')}
+          >
+            <Ionicons name="chatbubble-outline" size={24} color="#83AFA7" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Title and Subtitle */}
+      <View style={[styles.subtitleContainer, { backgroundColor: colors.primary }]}>
         <Text style={[
-          styles.headerTitle, 
+          styles.pageTitle,
           { color: colors.accent },
           { fontFamily: fontsLoaded ? "Poppins-Bold" : undefined }
         ]}>People</Text>
@@ -330,31 +392,6 @@ const PeopleScreen = ({ navigation }) => {
             ))}
           </ScrollView>
         </View>
-        
-        {/* Search Bar - Only show on discover tab */}
-        {activeTab === 'discover' && (
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#83AFA7" style={styles.searchIcon} />
-            <TextInput
-              style={[
-                styles.searchInput,
-                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }
-              ]}
-              placeholder="Search people or usernames..."
-              placeholderTextColor="#999"
-              value={searchQuery}
-              onChangeText={handleSearch}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={clearSearch} style={styles.clearButton}>
-                <Ionicons name="close-circle" size={20} color="#999" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-        )}
       </View>
 
       {/* Content */}
@@ -713,11 +750,82 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    ...(Platform.OS === 'android' && {
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+    }),
   },
-  headerTitle: {
+  logo: {
+    width: 40,
+    height: 30,
+    marginRight: 12,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    marginRight: 12,
+    height: 40,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 14,
+    color: '#333',
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 4,
+    marginLeft: 8,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#F68652',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontFamily: 'Poppins-Bold',
+    textAlign: 'center',
+  },
+  subtitleContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+    backgroundColor: '#DFECE2',
+  },
+  pageTitle: {
     fontSize: 22,
+    fontFamily: 'Poppins-Bold',
     marginBottom: 2,
   },
   headerSubtitle: {
@@ -890,41 +998,6 @@ const styles = StyleSheet.create({
     marginLeft: 3,
   },
   // Search styles
-  searchContainer: {
-    marginTop: 3,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 10 : 10,
-    height: Platform.OS === 'ios' ? 40 : 44,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
-    paddingVertical: 0,
-    textAlignVertical: 'center',
-    includeFontPadding: false,
-    ...(Platform.OS === 'android' && {
-      height: '100%',
-      lineHeight: 14,
-    }),
-  },
-  clearButton: {
-    marginLeft: 8,
-  },
   // Search results styles
   searchResultsHeader: {
     paddingHorizontal: 16,
@@ -986,7 +1059,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   tabScroll: {
-    paddingHorizontal: 20,
+    paddingRight: 20,
   },
   tab: {
     paddingHorizontal: 12,
