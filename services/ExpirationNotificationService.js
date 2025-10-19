@@ -451,6 +451,19 @@ class ExpirationNotificationService {
   // Notify all participants about expiration
   async notifyAllParticipants(listing, winner) {
     try {
+      // Validate inputs
+      if (!listing || !listing.id) {
+        console.error('❌ Invalid listing provided to notifyAllParticipants:', listing);
+        return;
+      }
+      
+      if (!winner || !winner.userId) {
+        console.error('❌ Invalid winner provided to notifyAllParticipants:', winner);
+        return;
+      }
+      
+      console.log(`📊 Notifying participants for listing ${listing.id} with winner ${winner.userId}`);
+      
       // Get all participants except the winner
       const participants = await this.getListingParticipants(listing.id);
       const otherParticipants = participants.filter(id => id !== winner.userId);
@@ -474,6 +487,12 @@ class ExpirationNotificationService {
       
       // Create database notifications for all interested users
       for (const userId of allInterestedUsers) {
+        // Validate userId
+        if (!userId || typeof userId !== 'string') {
+          console.error('❌ Invalid userId in notifyAllParticipants:', userId);
+          continue;
+        }
+        
         // Check if notification already exists for this user (simplified query to avoid index requirement)
         const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
         const existingNotificationQuery = query(
@@ -529,12 +548,26 @@ class ExpirationNotificationService {
       
       } catch (error) {
       console.error('❌ Error notifying participants:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listing: listing,
+        winner: winner
+      });
     }
   }
 
   // Get all users who have performed actions on a listing
   async getListingParticipants(listingId) {
     try {
+      // Validate listingId
+      if (!listingId || typeof listingId !== 'string') {
+        console.error('❌ Invalid listingId provided to getListingParticipants:', listingId);
+        return [];
+      }
+      
+      console.log(`🎯 Getting participants for listing: ${listingId}`);
+      
       // Get all activity logs for this listing
       const activityQuery = query(
         collection(db, 'activityLogs'),
@@ -546,16 +579,22 @@ class ExpirationNotificationService {
       
       activitySnapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.userId) {
+        if (data.userId && typeof data.userId === 'string') {
           participants.add(data.userId);
         }
       });
       
       const participantArray = Array.from(participants);
+      console.log(`🎯 Found ${participantArray.length} participants for listing ${listingId}`);
       
       return participantArray;
     } catch (error) {
       console.error('❌ Error getting listing participants:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listingId: listingId
+      });
       return [];
     }
   }
@@ -563,6 +602,14 @@ class ExpirationNotificationService {
   // Get all users who have viewed a listing (tracked in listingViews collection)
   async getListingViewers(listingId) {
     try {
+      // Validate listingId
+      if (!listingId || typeof listingId !== 'string') {
+        console.error('❌ Invalid listingId provided to getListingViewers:', listingId);
+        return [];
+      }
+      
+      console.log(`👀 Getting viewers for listing: ${listingId}`);
+      
       // Get all views for this listing
       const viewsQuery = query(
         collection(db, 'listingViews'),
@@ -574,7 +621,7 @@ class ExpirationNotificationService {
       
       viewsSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.userId) {
+        if (data.userId && typeof data.userId === 'string') {
           viewers.add(data.userId);
         }
       });
@@ -585,6 +632,11 @@ class ExpirationNotificationService {
       return viewerArray;
     } catch (error) {
       console.error('❌ Error getting listing viewers:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listingId: listingId
+      });
       return [];
     }
   }
@@ -636,6 +688,14 @@ class ExpirationNotificationService {
   // Notify all viewers when listing expires with no winner
   async notifyAllViewersNoWinner(listing) {
     try {
+      // Validate inputs
+      if (!listing || !listing.id) {
+        console.error('❌ Invalid listing provided to notifyAllViewersNoWinner:', listing);
+        return;
+      }
+      
+      console.log(`📊 Notifying viewers for listing ${listing.id} (no winner)`);
+      
       // Get all users who viewed this listing
       const viewers = await this.getListingViewers(listing.id);
       
@@ -651,6 +711,12 @@ class ExpirationNotificationService {
       
       // Create database notifications for all viewers
       for (const userId of viewers) {
+        // Validate userId
+        if (!userId || typeof userId !== 'string') {
+          console.error('❌ Invalid userId in notifyAllViewersNoWinner:', userId);
+          continue;
+        }
+        
         // Check if notification already exists for this user (simplified query to avoid index requirement)
         const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
         const existingNotificationQuery = query(
@@ -684,6 +750,11 @@ class ExpirationNotificationService {
       
     } catch (error) {
       console.error('❌ Error notifying viewers (no winner):', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listing: listing
+      });
     }
   }
 
