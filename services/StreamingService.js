@@ -1,5 +1,5 @@
 import { Camera } from 'expo-camera';
-import { Audio } from 'expo-av';
+import { Audio, Video } from 'expo-av';
 import { MediaLibrary } from 'expo-media-library';
 import { collection, addDoc, doc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';

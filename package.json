@@ -31,8 +31,6 @@
     "expo-av": "~15.0.1",
     "expo-camera": "~16.0.3",
     "expo-media-library": "~17.0.3",
-    "react-native-video": "^6.4.5",
-    "react-native-webrtc": "^1.119.0",
     "firebase": "^9.23.0",
     "firebase-admin": "^13.5.0",
     "phil-reg-prov-mun-brgy": "^1.1.0",
