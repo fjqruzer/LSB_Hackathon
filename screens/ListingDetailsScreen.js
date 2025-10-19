@@ -25,6 +25,7 @@ import ExpirationNotificationService from '../services/ExpirationNotificationSer
 import PaymentTimeoutService from '../services/PaymentTimeoutService';
 import RealTimeActionListener from '../services/RealTimeActionListener';
 import ChatService from '../services/ChatService';
+import StreamingService from '../services/StreamingService';
 import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
 import { db } from '../config/firebase';
 import { collection, addDoc, query, where, orderBy, onSnapshot, doc, updateDoc, getDocs, getDoc, serverTimestamp, increment } from 'firebase/firestore';
@@ -120,6 +121,8 @@ const ListingDetailsScreen = ({ navigation, route }) => {
   // Seller data state
   const [sellerData, setSellerData] = useState(null);
   const [sellerAddress, setSellerAddress] = useState(null);
+  const [isLiveStreaming, setIsLiveStreaming] = useState(false);
+  const [liveStream, setLiveStream] = useState(null);
 
   // Show instructions with smooth fade-in, then hide after 2.5 seconds with smooth fade-out
   useEffect(() => {
@@ -191,6 +194,24 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     };
   }, [listing?.id, user?.uid]);
 
+  // Check for live streams
+  const checkLiveStream = async () => {
+    try {
+      if (listing?.id) {
+        const streams = await StreamingService.getActiveStreams(listing.id);
+        if (streams.length > 0) {
+          setIsLiveStreaming(true);
+          setLiveStream(streams[0]);
+        } else {
+          setIsLiveStreaming(false);
+          setLiveStream(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking live stream:', error);
+    }
+  };
+
   // Load seller data and address
   const loadSellerData = async () => {
     if (!listing?.sellerId) return;
@@ -241,7 +262,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     if (listing?.sellerId) {
       loadSellerData();
     }
-  }, [listing?.sellerId]);
+    if (listing?.id) {
+      checkLiveStream();
+    }
+  }, [listing?.sellerId, listing?.id]);
 
   // Load activity logs from Firebase
   useEffect(() => {
@@ -1875,6 +1899,38 @@ const ListingDetailsScreen = ({ navigation, route }) => {
         )}
       </View>
 
+      {/* Live Streaming Section */}
+      {isLiveStreaming && liveStream && (
+        <View style={styles.liveStreamContainer}>
+          <View style={styles.liveStreamHeader}>
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+            <Text style={styles.liveStreamTitle}>{liveStream.title}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.watchStreamButton}
+            onPress={() => navigation.navigate('StreamViewer', { stream: liveStream })}
+          >
+            <Ionicons name="videocam" size={20} color="#fff" />
+            <Text style={styles.watchStreamText}>Watch Live Stream</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Start Stream Button (for listing owner) */}
+      {isOwnListing && !isLiveStreaming && (
+        <View style={styles.startStreamContainer}>
+          <TouchableOpacity
+            style={styles.startStreamButton}
+            onPress={() => navigation.navigate('LiveStream', { listing })}
+          >
+            <Ionicons name="videocam" size={20} color="#fff" />
+            <Text style={styles.startStreamText}>Start Live Stream</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Swipe Direction Indicator */}
       {swipeDirection && (
@@ -3047,6 +3103,82 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     textAlign: 'center',
     fontWeight: 'bold',
+  },
+  // Live Streaming Styles
+  liveStreamContainer: {
+    backgroundColor: '#ff4444',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  liveStreamHeader: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginRight: 12,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+    marginRight: 4,
+  },
+  liveText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  liveStreamTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  watchStreamButton: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  watchStreamText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  startStreamContainer: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  startStreamButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  startStreamText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

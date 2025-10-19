@@ -22,6 +22,9 @@ import ListingDetailsScreen from '../screens/ListingDetailsScreen';
 import ChatListScreen from '../screens/ChatListScreen';
 import ChatScreen from '../screens/ChatScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import LiveStreamScreen from '../screens/LiveStreamScreen';
+import StreamViewerScreen from '../screens/StreamViewerScreen';
+import LiveStreamsScreen from '../screens/LiveStreamsScreen';
 import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useNotificationNavigation } from '../contexts/NotificationNavigationContext';
@@ -364,6 +367,26 @@ const MainNavigationContent = () => {
             }}
             route={{ params: { listing: currentListing } }}
             key={`listing-details-${currentListing?.id || 'unknown'}`}
+          />
+        );
+      case 'LiveStream':
+        return (
+          <LiveStreamScreen 
+            navigation={{ goBack: () => setCurrentScreen('ListingDetails') }}
+            route={{ params: { listing: currentListing } }}
+          />
+        );
+      case 'StreamViewer':
+        return (
+          <StreamViewerScreen 
+            navigation={{ goBack: () => setCurrentScreen('ListingDetails') }}
+            route={{ params: { stream: paymentParams?.stream } }}
+          />
+        );
+      case 'LiveStreams':
+        return (
+          <LiveStreamsScreen 
+            navigation={{ goBack: () => setCurrentScreen('marketplace') }}
           />
         );
       default:

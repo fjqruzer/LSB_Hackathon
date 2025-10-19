@@ -24,6 +24,7 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const navItems = [
     { id: 'marketplace', icon: 'storefront-outline', label: 'Market', activeIcon: 'storefront' },
     { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
+    { id: 'LiveStreams', icon: 'videocam-outline', label: 'Live', activeIcon: 'videocam' },
     { id: 'add', icon: 'add', label: '', activeIcon: 'add' },
     { id: 'updates', icon: 'notifications-outline', label: 'Updates', activeIcon: 'notifications' },
     { id: 'profile', icon: 'person-outline', label: 'Me', activeIcon: 'person' },
