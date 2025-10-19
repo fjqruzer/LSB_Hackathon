@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Platform, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomNavigation from './BottomNavigation';
 import MarketplaceScreen from '../screens/MarketplaceScreen';
+import ForYouScreen from '../screens/ForYouScreen';
 import PeopleScreen from '../screens/PeopleScreen';
 import UpdatesScreen from '../screens/UpdatesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -96,6 +97,26 @@ const MainNavigationContent = () => {
             }
           }}}
         />;
+      case 'foryou':
+        return <ForYouScreen 
+          onNavigateToFavorites={() => setCurrentScreen('MyFavorites')}
+          navigation={{ 
+            navigate: (screen, params) => {
+              if (screen === 'messages') {
+                setCurrentScreen('messages');
+              } else if (screen === 'Chat') {
+                setCurrentScreen('Chat');
+                setPaymentParams(params);
+              } else if (screen === 'ListingDetails') {
+                setCurrentListing(params?.listing);
+                setCurrentScreen('ListingDetails');
+              } else {
+                setCurrentScreen(screen);
+              }
+            },
+            goBack: () => setCurrentScreen('marketplace')
+          }}
+        />;
       case 'people':
         return <PeopleScreen navigation={{ navigate: (screen, params) => {
           if (screen === 'UserProfile') {
@@ -163,8 +184,7 @@ const MainNavigationContent = () => {
             }
           },
           goBack: () => {
-            // Handle goBack if needed
-            console.log('UpdatesScreen goBack called');
+            setCurrentScreen('marketplace');
           }
         }} />;
       case 'profile':

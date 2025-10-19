@@ -14,7 +14,15 @@ import {
   ActivityIndicator,
   Modal,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+
+// Conditionally import MapView only for native platforms
+let MapView, Marker;
+if (Platform.OS !== 'web') {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+}
+
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -397,18 +405,25 @@ const ChatScreen = ({ navigation, route }) => {
             isMe ? styles.myBubble : styles.otherBubble,
           ]}>
             <View style={styles.locationPreview}>
-              <MapView
-                style={styles.locationMap}
-                initialRegion={{
-                  latitude: item.coordinate.latitude,
-                  longitude: item.coordinate.longitude,
-                  latitudeDelta: 0.005,
-                  longitudeDelta: 0.005,
-                }}
-                pointerEvents="none"
-              >
-                <Marker coordinate={item.coordinate} />
-              </MapView>
+              {Platform.OS !== 'web' && MapView ? (
+                <MapView
+                  style={styles.locationMap}
+                  initialRegion={{
+                    latitude: item.coordinate.latitude,
+                    longitude: item.coordinate.longitude,
+                    latitudeDelta: 0.005,
+                    longitudeDelta: 0.005,
+                  }}
+                  pointerEvents="none"
+                >
+                  <Marker coordinate={item.coordinate} />
+                </MapView>
+              ) : (
+                <View style={[styles.locationMap, { backgroundColor: '#E0E0E0', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="map-outline" size={40} color="#999" />
+                  <Text style={{ color: '#999', marginTop: 8 }}>Map not available on web</Text>
+                </View>
+              )}
             </View>
             <TouchableOpacity
               style={[styles.openMapButton, { backgroundColor: colors.accent }]}
@@ -651,23 +666,31 @@ const ChatScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.mapContainer}>
-              <MapView
-                style={styles.map}
-                initialRegion={mapRegion}
-                region={mapRegion}
-                onRegionChangeComplete={setMapRegion}
-                onPress={(e) => setSelectedPin(e.nativeEvent.coordinate)}
-              >
-                {selectedPin && (<Marker coordinate={selectedPin} />)}
-                {Object.entries(liveLocations).map(([uid, loc]) => (
-                  <Marker
-                    key={uid}
-                    coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-                    pinColor={uid === user.uid ? 'green' : 'red'}
-                    title={uid === user.uid ? 'You' : otherUser.name || 'Participant'}
-                  />
-                ))}
-              </MapView>
+              {Platform.OS !== 'web' && MapView ? (
+                <MapView
+                  style={styles.map}
+                  initialRegion={mapRegion}
+                  region={mapRegion}
+                  onRegionChangeComplete={setMapRegion}
+                  onPress={(e) => setSelectedPin(e.nativeEvent.coordinate)}
+                >
+                  {selectedPin && (<Marker coordinate={selectedPin} />)}
+                  {Object.entries(liveLocations).map(([uid, loc]) => (
+                    <Marker
+                      key={uid}
+                      coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+                      pinColor={uid === user.uid ? 'green' : 'red'}
+                      title={uid === user.uid ? 'You' : otherUser.name || 'Participant'}
+                    />
+                  ))}
+                </MapView>
+              ) : (
+                <View style={[styles.map, { backgroundColor: '#E0E0E0', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Ionicons name="map-outline" size={60} color="#999" />
+                  <Text style={{ color: '#999', marginTop: 16, fontSize: 16 }}>Map not available on web</Text>
+                  <Text style={{ color: '#999', marginTop: 8, fontSize: 12 }}>Please use mobile app for location features</Text>
+                </View>
+              )}
               {gettingLocation && (
                 <View style={styles.mapLoadingOverlay}>
                   <ActivityIndicator size="large" color="#83AFA7" />

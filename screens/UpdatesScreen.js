@@ -209,16 +209,25 @@ const UpdatesScreen = ({ navigation }) => {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation?.goBack && navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#83AFA7" />
+        </TouchableOpacity>
         <View style={styles.headerLeft}>
           <Text style={[styles.headerTitle, { color: colors.accent }]}>Updates</Text>
           <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Stay informed about your activity</Text>
         </View>
         <View style={styles.headerRight}>
-          {unreadCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{unreadCount}</Text>
-            </View>
-          )}
+          <View style={{ position: 'relative' }}>
+            <Ionicons name="notifications" size={28} color="#83AFA7" />
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
@@ -309,6 +318,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Poppins-Regular',
   },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
   headerLeft: {
     flex: 1,
   },
@@ -396,13 +409,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   badge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
     backgroundColor: '#F68652',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    paddingHorizontal: 4,
   },
   badgeText: {
     color: 'white',
