@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { useFonts } from 'expo-font';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
+import OTPService from '../services/OTPService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,8 +33,9 @@ const LoginScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [otpMode, setOtpMode] = useState(false);
   
-  const { login } = useAuth();
+  const { login, forgotPassword } = useAuth();
 
   // Check if login form is valid
   const isLoginFormValid = () => {
@@ -121,29 +124,72 @@ const LoginScreen = ({ navigation }) => {
     
     setLoading(true);
     try {
+      // First, try to login with password
       await login(email.trim(), password);
       // Navigation to main app happens automatically via AuthContext
     } catch (error) {
-      let errorMessage = 'An error occurred during login';
-      
-      if (error.code === 'auth/user-not-found') {
-        setErrors({ email: 'No account found with this email address' });
-      } else if (error.code === 'auth/wrong-password') {
-        setErrors({ password: 'Incorrect password. Please try again' });
-      } else if (error.code === 'auth/invalid-email') {
-        setErrors({ email: 'Please enter a valid email address' });
-      } else if (error.code === 'auth/too-many-requests') {
-        setErrors({ general: 'Too many failed attempts. Please try again later' });
+      // If login fails, offer OTP as alternative
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        Alert.alert(
+          'Login Failed',
+          'Invalid credentials. Would you like to sign in with OTP instead?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Use OTP', 
+              onPress: () => handleOTPLogin()
+            }
+          ]
+        );
       } else {
-        setErrors({ general: errorMessage });
+        let errorMessage = 'An error occurred during login';
+        
+        if (error.code === 'auth/invalid-email') {
+          setErrors({ email: 'Please enter a valid email address' });
+        } else if (error.code === 'auth/too-many-requests') {
+          setErrors({ general: 'Too many failed attempts. Please try again later' });
+        } else {
+          setErrors({ general: errorMessage });
+        }
       }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleOTPLogin = async () => {
+    setLoading(true);
+    try {
+      const result = await OTPService.sendOTP(email.trim(), 'signin');
+      
+      if (result.success) {
+        // Navigate to OTP verification screen
+        navigation.navigate('OTPVerification', {
+          email: email.trim(),
+          type: 'signin',
+          onVerificationSuccess: async () => {
+            // After OTP verification, proceed with login
+            try {
+              await login(email.trim(), password);
+              // Navigation to main app happens automatically via AuthContext
+            } catch (error) {
+              Alert.alert('Error', 'Login failed. Please try again.');
+            }
+          }
+        });
+      } else {
+        Alert.alert('Error', result.message);
+      }
+    } catch (error) {
+      console.error('OTP send error:', error);
+      Alert.alert('Error', 'Failed to send verification code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleForgotPassword = () => {
-    // Handle forgot password logic here
+    navigation.navigate('ForgotPassword');
   };
 
   const handleSignUp = async () => {
@@ -257,13 +303,6 @@ const LoginScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Sign In Later */}
-        <TouchableOpacity 
-          style={styles.signInLaterButton}
-          onPress={() => {}}
-        >
-          <Text style={styles.signInLaterText}>Sign In Later</Text>
-        </TouchableOpacity>
       </View>
 
     </SafeAreaView>
@@ -386,15 +425,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Poppins-SemiBold',
     color: COLORS.orange,
-  },
-  signInLaterButton: {
-    marginBottom: 30,
-  },
-  signInLaterText: {
-    fontSize: 14,
-    fontFamily: 'Poppins-Regular',
-    color: COLORS.teal,
-    textAlign: 'center',
   },
   bottomTagline: {
     paddingBottom: 80,

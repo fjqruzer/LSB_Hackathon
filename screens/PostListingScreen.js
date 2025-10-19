@@ -54,6 +54,10 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   
@@ -105,6 +109,216 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
       ...prev,
       [field]: value
     }));
+    
+    // Mark field as touched
+    setTouchedFields(prev => ({
+      ...prev,
+      [field]: true
+    }));
+    
+    // Validate field in real-time
+    validateField(field, value);
+  };
+
+  // Real-time validation function
+  const validateField = (field, value) => {
+    let error = '';
+    
+    switch (field) {
+      case 'listingTitle':
+        if (!value || value.trim().length === 0) {
+          error = 'Listing title is required';
+        } else if (value.trim().length < 3) {
+          error = 'Title must be at least 3 characters';
+        }
+        break;
+        
+      case 'minePrice':
+        if (priceType === 'msl') {
+          if (!value || value.trim().length === 0) {
+            error = 'Mine price is required';
+          } else if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+            error = 'Mine price must be a valid positive number';
+          } else {
+            // Check MSL price order
+            const mine = parseFloat(value);
+            const steal = parseFloat(formData.stealPrice);
+            const lock = parseFloat(formData.lockPrice);
+            
+            if (steal && mine >= steal) {
+              error = 'Mine must be less than Steal';
+            }
+            if (lock && mine >= lock) {
+              error = 'Mine must be less than Lock';
+            }
+          }
+        }
+        break;
+        
+      case 'stealPrice':
+        if (priceType === 'msl') {
+          if (!value || value.trim().length === 0) {
+            error = 'Steal price is required';
+          } else if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+            error = 'Steal price must be a valid positive number';
+          } else {
+            // Check MSL price order
+            const mine = parseFloat(formData.minePrice);
+            const steal = parseFloat(value);
+            const lock = parseFloat(formData.lockPrice);
+            
+            if (mine && mine >= steal) {
+              error = 'Steal must be greater than Mine';
+            }
+            if (lock && steal >= lock) {
+              error = 'Steal must be less than Lock';
+            }
+          }
+        }
+        break;
+        
+      case 'lockPrice':
+        if (priceType === 'msl') {
+          if (!value || value.trim().length === 0) {
+            error = 'Lock price is required';
+          } else if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+            error = 'Lock price must be a valid positive number';
+          } else {
+            // Check MSL price order
+            const mine = parseFloat(formData.minePrice);
+            const steal = parseFloat(formData.stealPrice);
+            const lock = parseFloat(value);
+            
+            if (mine && mine >= lock) {
+              error = 'Lock must be greater than Mine';
+            }
+            if (steal && steal >= lock) {
+              error = 'Lock must be greater than Steal';
+            }
+          }
+        }
+        break;
+        
+      case 'startingPrice':
+        if (priceType === 'bidding') {
+          if (!value || value.trim().length === 0) {
+            error = 'Starting price is required';
+          } else if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+            error = 'Starting price must be a valid positive number';
+          }
+        }
+        break;
+        
+      case 'minimumBidIncrement':
+        if (priceType === 'bidding') {
+          if (!value || value.trim().length === 0) {
+            error = 'Minimum bid increment is required';
+          } else if (isNaN(parseFloat(value)) || parseFloat(value) <= 0) {
+            error = 'Minimum bid increment must be a valid positive number';
+          }
+        }
+        break;
+        
+      case 'brand':
+        if (value && value.trim().length > 0 && value.trim().length < 2) {
+          error = 'Brand must be at least 2 characters';
+        }
+        break;
+        
+      case 'description':
+        if (value && value.trim().length > 0 && value.trim().length < 10) {
+          error = 'Description must be at least 10 characters';
+        }
+        break;
+        
+      case 'photos':
+        if (!value || value.length === 0) {
+          error = 'At least one photo is required';
+        }
+        break;
+    }
+    
+    setValidationErrors(prev => ({
+      ...prev,
+      [field]: error
+    }));
+  };
+
+  // Validate all fields
+  const validateAllFields = () => {
+    const errors = {};
+    
+    // Validate listing title
+    if (!formData.listingTitle || formData.listingTitle.trim().length === 0) {
+      errors.listingTitle = 'Listing title is required';
+    } else if (formData.listingTitle.trim().length < 3) {
+      errors.listingTitle = 'Title must be at least 3 characters';
+    }
+    
+    // Validate prices based on type
+    if (priceType === 'msl') {
+      if (!formData.minePrice || formData.minePrice.trim().length === 0) {
+        errors.minePrice = 'Mine price is required';
+      } else if (isNaN(parseFloat(formData.minePrice)) || parseFloat(formData.minePrice) <= 0) {
+        errors.minePrice = 'Mine price must be a valid positive number';
+      }
+      
+      if (!formData.stealPrice || formData.stealPrice.trim().length === 0) {
+        errors.stealPrice = 'Steal price is required';
+      } else if (isNaN(parseFloat(formData.stealPrice)) || parseFloat(formData.stealPrice) <= 0) {
+        errors.stealPrice = 'Steal price must be a valid positive number';
+      }
+      
+      if (!formData.lockPrice || formData.lockPrice.trim().length === 0) {
+        errors.lockPrice = 'Lock price is required';
+      } else if (isNaN(parseFloat(formData.lockPrice)) || parseFloat(formData.lockPrice) <= 0) {
+        errors.lockPrice = 'Lock price must be a valid positive number';
+      }
+      
+      // Check MSL price order
+      const mine = parseFloat(formData.minePrice);
+      const steal = parseFloat(formData.stealPrice);
+      const lock = parseFloat(formData.lockPrice);
+      
+      if (mine && steal && mine >= steal) {
+        errors.stealPrice = 'Steal must be greater than Mine';
+      }
+      if (steal && lock && steal >= lock) {
+        errors.lockPrice = 'Lock must be greater than Steal';
+      }
+    } else {
+      if (!formData.startingPrice || formData.startingPrice.trim().length === 0) {
+        errors.startingPrice = 'Starting price is required';
+      } else if (isNaN(parseFloat(formData.startingPrice)) || parseFloat(formData.startingPrice) <= 0) {
+        errors.startingPrice = 'Starting price must be a valid positive number';
+      }
+      
+      if (!formData.minimumBidIncrement || formData.minimumBidIncrement.trim().length === 0) {
+        errors.minimumBidIncrement = 'Minimum bid increment is required';
+      } else if (isNaN(parseFloat(formData.minimumBidIncrement)) || parseFloat(formData.minimumBidIncrement) <= 0) {
+        errors.minimumBidIncrement = 'Minimum bid increment must be a valid positive number';
+      }
+    }
+    
+    // Validate photos
+    if (selectedPhotos.length === 0) {
+      errors.photos = 'At least one photo is required';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Helper function to render error message
+  const renderErrorMessage = (field) => {
+    if (touchedFields[field] && validationErrors[field]) {
+      return (
+        <Text style={[styles.errorText, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+          {validationErrors[field]}
+        </Text>
+      );
+    }
+    return null;
   };
 
   // Helper function to show popup
@@ -181,6 +395,10 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
         const newPhotos = [...selectedPhotos, newPhoto];
         setSelectedPhotos(newPhotos);
         setRenderKey(prev => prev + 1);
+        
+        // Mark photos field as touched and validate
+        setTouchedFields(prev => ({ ...prev, photos: true }));
+        validateField('photos', newPhotos);
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -209,6 +427,9 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
       if (!result.canceled && result.assets && result.assets[0]) {
         setSelectedPhotos(prev => {
           const newPhotos = [...prev, result.assets[0].uri];
+          // Mark photos field as touched and validate
+          setTouchedFields(prev => ({ ...prev, photos: true }));
+          validateField('photos', newPhotos);
           return newPhotos;
         });
         setRenderKey(prev => prev + 1);
@@ -232,7 +453,13 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
   };
 
   const removePhoto = (index) => {
-    setSelectedPhotos(prev => prev.filter((_, i) => i !== index));
+    setSelectedPhotos(prev => {
+      const newPhotos = prev.filter((_, i) => i !== index);
+      // Mark photos field as touched and validate
+      setTouchedFields(prev => ({ ...prev, photos: true }));
+      validateField('photos', newPhotos);
+      return newPhotos;
+    });
   };
 
   const formatDate = (date) => {
@@ -251,38 +478,18 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
     });
   };
 
-  // Form validation
+  // Form validation (now uses real-time validation)
   const validateForm = () => {
-    if (!formData.listingTitle.trim()) {
-      showPopup('', 'Please enter a listing title for your item.', 'warning');
-      return false;
-    }
-
-    if (selectedPhotos.length === 0) {
-      showPopup('', 'Add at least one photo to showcase your item!', 'warning');
-      return false;
-    }
-
-    if (priceType === 'msl') {
-      if (!formData.minePrice || !formData.stealPrice || !formData.lockPrice) {
-        showPopup('', 'Complete all MSL prices - Mine, Steal, and Lock prices are required.', 'warning');
-        return false;
-      }
-      
-      const mine = parseFloat(formData.minePrice);
-      const steal = parseFloat(formData.stealPrice);
-      const lock = parseFloat(formData.lockPrice);
-      
-      if (mine >= steal || steal >= lock) {
-        showPopup('', 'MSL prices must follow the pattern: Mine < Steal < Lock for fair bidding.', 'warning');
-        return false;
-      }
-    } else {
-      if (!formData.startingPrice || !formData.minimumBidIncrement) {
-        showPopup('', 'Set your starting bid price and minimum bid increment for the auction.', 'warning');
-        return false;
-      }
-    }
+    // Mark all fields as touched to show all errors
+    const allFields = ['listingTitle', 'minePrice', 'stealPrice', 'lockPrice', 'startingPrice', 'minimumBidIncrement', 'brand', 'description'];
+    const touchedAll = {};
+    allFields.forEach(field => {
+      touchedAll[field] = true;
+    });
+    setTouchedFields(touchedAll);
+    
+    // Validate all fields
+    const isValid = validateAllFields();
 
     // Check if end date/time is in the future
     const endDateTime = new Date(selectedDate);
@@ -293,7 +500,7 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
       return false;
     }
 
-    return true;
+    return isValid;
   };
 
   // Submit listing
@@ -547,6 +754,11 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
                     {/* Photo */}
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Photos</Text>
+            {touchedFields.photos && validationErrors.photos && (
+              <Text style={[styles.errorText, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                {validationErrors.photos}
+              </Text>
+            )}
             <View key={renderKey} style={styles.photoContainer}>
               {selectedPhotos.map((photo, index) => (
                 <View key={index} style={styles.photoSlot}>
@@ -571,9 +783,12 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
             </View>
           </View>
 
-          {/* Type */}
+          {/* Type and Category */}
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Type</Text>
+            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Type & Category</Text>
+            <View style={styles.priceRow}>
+              <View style={styles.priceField}>
+                <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Type</Text>
             <TouchableOpacity 
               style={styles.dropdownInput}
               onPress={() => setShowTypeModal(true)}
@@ -584,10 +799,8 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
               <Ionicons name="chevron-forward" size={20} color="#83AFA7" />
             </TouchableOpacity>
           </View>
-
-          {/* Category */}
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Category</Text>
+              <View style={styles.priceField}>
+                <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Category</Text>
             <TouchableOpacity 
               style={styles.dropdownInput}
               onPress={() => setShowCategoryModal(true)}
@@ -597,18 +810,25 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
               </Text>
               <Ionicons name="chevron-forward" size={20} color="#83AFA7" />
             </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           {/* Listing Title */}
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Listing Title</Text>
             <TextInput
-              style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+              style={[
+                styles.textInput, 
+                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                touchedFields.listingTitle && validationErrors.listingTitle && styles.errorInput
+              ]}
               placeholder="Name your listing"
               placeholderTextColor="#999"
               value={formData.listingTitle}
               onChangeText={(value) => handleInputChange('listingTitle', value)}
             />
+            {renderErrorMessage('listingTitle')}
           </View>
         </View>
 
@@ -696,69 +916,107 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
           {priceType === 'msl' ? (
             <View>
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Mine</Text>
+                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>MSL Prices</Text>
+                <View style={styles.priceRow}>
+                  <View style={styles.priceField}>
+                    <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Mine</Text>
                 <TextInput
-                  style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                      style={[
+                        styles.priceTextInput, 
+                        { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                        touchedFields.minePrice && validationErrors.minePrice && styles.errorInput
+                      ]}
                   placeholder="PHP"
                   placeholderTextColor="#999"
                   keyboardType="numeric"
                   value={formData.minePrice}
                   onChangeText={(value) => handleInputChange('minePrice', value)}
                 />
+                    {renderErrorMessage('minePrice')}
               </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Steal</Text>
+                  <View style={styles.priceField}>
+                    <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Steal</Text>
                 <TextInput
-                  style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                      style={[
+                        styles.priceTextInput, 
+                        { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                        touchedFields.stealPrice && validationErrors.stealPrice && styles.errorInput
+                      ]}
                   placeholder="PHP"
                   placeholderTextColor="#999"
                   keyboardType="numeric"
                   value={formData.stealPrice}
                   onChangeText={(value) => handleInputChange('stealPrice', value)}
                 />
+                    {renderErrorMessage('stealPrice')}
               </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Lock</Text>
+                  <View style={styles.priceField}>
+                    <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Lock</Text>
                 <TextInput
-                  style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                      style={[
+                        styles.priceTextInput, 
+                        { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                        touchedFields.lockPrice && validationErrors.lockPrice && styles.errorInput
+                      ]}
                   placeholder="PHP"
                   placeholderTextColor="#999"
                   keyboardType="numeric"
                   value={formData.lockPrice}
                   onChangeText={(value) => handleInputChange('lockPrice', value)}
                 />
+                    {renderErrorMessage('lockPrice')}
+                  </View>
+                </View>
               </View>
             </View>
           ) : (
             <View>
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Starting Price</Text>
+                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Bidding Prices</Text>
+                <View style={styles.priceRow}>
+                  <View style={styles.priceField}>
+                    <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Starting Price</Text>
                 <TextInput
-                  style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                      style={[
+                        styles.priceTextInput, 
+                        { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                        touchedFields.startingPrice && validationErrors.startingPrice && styles.errorInput
+                      ]}
                   placeholder="PHP"
                   placeholderTextColor="#999"
                   keyboardType="numeric"
                   value={formData.startingPrice}
                   onChangeText={(value) => handleInputChange('startingPrice', value)}
                 />
+                    {renderErrorMessage('startingPrice')}
               </View>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Minimum Bid Increment</Text>
+                  <View style={styles.priceField}>
+                    <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Min. Increment</Text>
                 <TextInput
-                  style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                      style={[
+                        styles.priceTextInput, 
+                        { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                        touchedFields.minimumBidIncrement && validationErrors.minimumBidIncrement && styles.errorInput
+                      ]}
                   placeholder="PHP"
                   placeholderTextColor="#999"
                   keyboardType="numeric"
                   value={formData.minimumBidIncrement}
                   onChangeText={(value) => handleInputChange('minimumBidIncrement', value)}
                 />
+                    {renderErrorMessage('minimumBidIncrement')}
+                  </View>
+                </View>
               </View>
             </View>
           )}
 
           {/* Date and Time Picker - Available for both MSL and Bidding */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>End Date</Text>
+            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>End Date & Time</Text>
+            <View style={styles.dateTimeRow}>
+              <View style={styles.dateTimeField}>
+                <Text style={[styles.dateTimeLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Date</Text>
                 <TouchableOpacity 
                   style={styles.dateTimeButton}
                   onPress={() => setShowDatePicker(true)}
@@ -769,9 +1027,8 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
                   <Ionicons name="calendar-outline" size={20} color="#83AFA7" />
                 </TouchableOpacity>
               </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>End Time</Text>
+              <View style={styles.dateTimeField}>
+                <Text style={[styles.dateTimeLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Time</Text>
                 <TouchableOpacity 
                   style={styles.dateTimeButton}
                   onPress={() => setShowTimePicker(true)}
@@ -782,6 +1039,8 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
                   <Ionicons name="time-outline" size={20} color="#83AFA7" />
                 </TouchableOpacity>
               </View>
+            </View>
+              </View>
 
           {/* Description */}
           <View style={styles.inputGroup}>
@@ -789,7 +1048,11 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
               Description (Optional)
             </Text>
             <TextInput
-              style={[styles.textArea, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+              style={[
+                styles.textArea, 
+                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                touchedFields.description && validationErrors.description && styles.errorInput
+              ]}
               placeholder="Describe your item and include details buyers would love, especially any unique story!"
               placeholderTextColor="#999"
               multiline
@@ -798,24 +1061,32 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
               value={formData.description}
               onChangeText={(value) => handleInputChange('description', value)}
             />
+            {renderErrorMessage('description')}
           </View>
         </View>
 
         {/* Brand and Size */}
         <View style={styles.section}>
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Brand</Text>
+            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Brand & Size</Text>
+            <View style={styles.priceRow}>
+              <View style={styles.priceField}>
+                <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Brand</Text>
             <TextInput
-              style={[styles.textInput, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}
+                  style={[
+                    styles.textInput, 
+                    { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                    touchedFields.brand && validationErrors.brand && styles.errorInput
+                  ]}
               placeholder="Enter brand"
               placeholderTextColor="#999"
               value={formData.brand}
               onChangeText={(value) => handleInputChange('brand', value)}
             />
+                {renderErrorMessage('brand')}
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Size</Text>
+              <View style={styles.priceField}>
+                <Text style={[styles.priceLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Size</Text>
             <TouchableOpacity 
               style={styles.dropdownInput}
               onPress={() => setShowSizeModal(true)}
@@ -825,6 +1096,8 @@ const PostListingScreen = ({ navigation, selectedPhotos, setSelectedPhotos }) =>
               </Text>
               <Ionicons name="chevron-forward" size={20} color="#83AFA7" />
             </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -1069,7 +1342,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 12 : 16,
   },
   closeButton: {
     padding: 4,
@@ -1082,38 +1355,38 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'android' ? 16 : 20,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? 14 : 16,
     color: '#83AFA7',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 12 : 16,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'android' ? 12 : 16,
   },
   label: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 12 : 14,
     color: '#333',
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'android' ? 6 : 8,
   },
   textInput: {
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
+    paddingVertical: Platform.OS === 'android' ? 10 : 12,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: '#333',
   },
   textArea: {
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
+    paddingVertical: Platform.OS === 'android' ? 10 : 12,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: '#333',
     minHeight: 80,
   },
@@ -1121,13 +1394,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'android' ? 10 : 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   dropdownText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: '#333',
   },
   buttonGroup: {
@@ -1136,8 +1409,8 @@ const styles = StyleSheet.create({
   },
   selectionButton: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
+    paddingHorizontal: Platform.OS === 'android' ? 12 : 16,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E0E0E0',
@@ -1149,7 +1422,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F8F6',
   },
   selectionButtonText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 12 : 14,
     color: '#666',
   },
   selectedButtonText: {
@@ -1158,11 +1431,11 @@ const styles = StyleSheet.create({
   photoContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: Platform.OS === 'android' ? 8 : 12,
   },
   photoSlot: {
-    width: 80,
-    height: 80,
+    width: Platform.OS === 'android' ? 70 : 80,
+    height: Platform.OS === 'android' ? 70 : 80,
     borderRadius: 8,
     overflow: 'visible',
     borderWidth: 2,
@@ -1194,8 +1467,8 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   addPhotoButton: {
-    width: 80,
-    height: 80,
+    width: Platform.OS === 'android' ? 70 : 80,
+    height: Platform.OS === 'android' ? 70 : 80,
     borderRadius: 8,
     borderWidth: 2,
     borderColor: '#E0E0E0',
@@ -1208,52 +1481,52 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'android' ? 10 : 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   dateTimeText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: '#333',
   },
   radioGroup: {
-    gap: 16,
+    gap: Platform.OS === 'android' ? 12 : 16,
   },
   radioOption: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: Platform.OS === 'android' ? 18 : 20,
+    height: Platform.OS === 'android' ? 18 : 20,
+    borderRadius: Platform.OS === 'android' ? 9 : 10,
     borderWidth: 2,
     borderColor: '#83AFA7',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: Platform.OS === 'android' ? 10 : 12,
   },
   radioSelected: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: Platform.OS === 'android' ? 8 : 10,
+    height: Platform.OS === 'android' ? 8 : 10,
+    borderRadius: Platform.OS === 'android' ? 4 : 5,
     backgroundColor: '#83AFA7',
   },
   radioText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: '#333',
   },
   submitButton: {
     backgroundColor: '#83AFA7',
     borderRadius: 25,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 40,
+    marginTop: Platform.OS === 'android' ? 20 : 24,
+    marginBottom: Platform.OS === 'android' ? 32 : 40,
   },
   submitButtonText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
     color: 'white',
   },
   submitButtonDisabled: {
@@ -1287,22 +1560,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 12 : 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'android' ? 16 : 18,
     fontFamily: 'Poppins-SemiBold',
     color: '#333',
   },
   modalCancelText: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? 14 : 16,
     color: '#83AFA7',
     fontFamily: 'Poppins-Medium',
   },
   modalDoneText: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? 14 : 16,
     color: '#83AFA7',
     fontFamily: 'Poppins-SemiBold',
   },
@@ -1314,7 +1587,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: Platform.OS === 'android' ? 12 : 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
     ...(Platform.OS === 'android' && {
@@ -1322,12 +1595,62 @@ const styles = StyleSheet.create({
     }),
   },
   optionText: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'android' ? 14 : 16,
     color: '#333',
   },
   selectedOptionText: {
     color: '#83AFA7',
     fontFamily: 'Poppins-Medium',
+  },
+  // Price row styles
+  priceRow: {
+    flexDirection: 'row',
+    gap: Platform.OS === 'android' ? 8 : 12,
+  },
+  priceField: {
+    flex: 1,
+    minWidth: 0, // Prevents flex items from growing beyond container
+  },
+  priceLabel: {
+    fontSize: Platform.OS === 'android' ? 11 : 12,
+    color: '#666',
+    marginBottom: Platform.OS === 'android' ? 4 : 6,
+    textAlign: 'center', // Center align labels for consistency
+  },
+  priceTextInput: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'android' ? 10 : 12,
+    fontSize: Platform.OS === 'android' ? 13 : 14,
+    color: '#333',
+    width: '100%', // Ensure full width
+    textAlign: 'center', // Center align text for consistency
+  },
+  // Date time row styles
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: Platform.OS === 'android' ? 8 : 12,
+  },
+  dateTimeField: {
+    flex: 1,
+  },
+  dateTimeLabel: {
+    fontSize: Platform.OS === 'android' ? 11 : 12,
+    color: '#666',
+    marginBottom: Platform.OS === 'android' ? 4 : 6,
+  },
+  // Error text style
+  errorText: {
+    fontSize: Platform.OS === 'android' ? 11 : 12,
+    color: '#F44336',
+    marginTop: Platform.OS === 'android' ? 2 : 4,
+    marginLeft: 4,
+  },
+  // Error input style
+  errorInput: {
+    borderColor: '#F44336',
+    borderWidth: 1,
   },
 });
 

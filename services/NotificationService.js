@@ -25,11 +25,11 @@ class NotificationService {
 
   // Register for push notifications
   async registerForPushNotificationsAsync() {
-    // Registering for push notifications
-
+    console.log('📱 Registering for push notifications...');
     let token;
 
     if (Platform.OS === 'android') {
+      console.log('📱 Setting up Android notification channel...');
       // Setting up Android notification channel
       await Notifications.setNotificationChannelAsync('default', {
         name: 'default',
@@ -40,43 +40,123 @@ class NotificationService {
     }
 
     // Always try to get permissions for local notifications
-    // Checking notification permissions
+    console.log('📱 Checking notification permissions...');
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     
+    console.log('🔐 Current notification permission status:', existingStatus);
+    
     if (existingStatus !== 'granted') {
+      console.log('🔐 Requesting notification permissions...');
       // Requesting notification permissions
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      console.log('🔐 New notification permission status:', finalStatus);
     }
     
-    // Notification permission status
+    console.log('📱 Final notification permission status:', finalStatus);
     
     if (finalStatus !== 'granted') {
-      return null;
+      console.log('❌ Notification permissions not granted');
+      return 'no-permissions';
     }
     
-    // Try to get push token only on physical devices
-    if (Device.isDevice && !isExpoGo) {
+    // Try to get push token - improved logic for standalone builds
+    console.log('📱 Device info:', {
+      isDevice: Device.isDevice,
+      isExpoGo: isExpoGo,
+      appOwnership: Constants.appOwnership,
+      projectId: Constants.expoConfig?.extra?.eas?.projectId,
+      expoConfig: Constants.expoConfig
+    });
+
+    // Always try to get push token if we have a project ID (standalone builds)
+    if (Constants.expoConfig?.extra?.eas?.projectId) {
       try {
-        // Attempting to get push token
-        token = (await Notifications.getExpoPushTokenAsync({
+        console.log('📱 Attempting to get push token for standalone build...');
+        console.log('📱 Project ID:', Constants.expoConfig.extra.eas.projectId);
+        
+        const pushTokenResponse = await Notifications.getExpoPushTokenAsync({
           projectId: Constants.expoConfig.extra.eas.projectId,
-        })).data;
+        });
+        
+        token = pushTokenResponse.data;
         this.expoPushToken = token;
-        // Push token obtained
+        console.log('✅ Push token obtained successfully:', token);
+        console.log('✅ Push token type:', typeof token);
+        console.log('✅ Push token length:', token ? token.length : 'null');
+        
+        // Validate token format
+        if (token && token.startsWith('ExponentPushToken[') && token.endsWith(']')) {
+          console.log('✅ Push token format is valid');
+        } else {
+          console.log('⚠️ Push token format may be invalid:', token);
+        }
+        
       } catch (error) {
-        // Failed to get push token
-        // Don't return null here, local notifications can still work
+        console.log('❌ Failed to get push token with project ID:', error);
+        console.log('❌ Error details:', {
+          message: error.message,
+          code: error.code,
+          stack: error.stack
+        });
+        
+        // Check if it's a permission error
+        if (error.code === 'E_PERMISSION_DENIED') {
+          console.log('❌ Permission denied for push notifications');
+          return 'no-permissions';
+        }
+        
+        // Check if it's a device error
+        if (error.code === 'E_DEVICE_NOT_SUPPORTED') {
+          console.log('❌ Device not supported for push notifications');
+          return 'device-not-supported';
+        }
+        
+        // If we're in a standalone build but can't get token, still try without project ID
+        if (!isExpoGo && Device.isDevice) {
+          console.log('🔄 Retrying push token registration without project ID...');
+          try {
+            const retryResponse = await Notifications.getExpoPushTokenAsync();
+            token = retryResponse.data;
+            this.expoPushToken = token;
+            console.log('✅ Push token obtained on retry:', token);
+          } catch (retryError) {
+            console.log('❌ Retry also failed:', retryError);
+            console.log('❌ Retry error details:', {
+              message: retryError.message,
+              code: retryError.code
+            });
+            
+            // Return specific error codes
+            if (retryError.code === 'E_PERMISSION_DENIED') {
+              return 'no-permissions';
+            } else if (retryError.code === 'E_DEVICE_NOT_SUPPORTED') {
+              return 'device-not-supported';
+            } else {
+              return 'push-token-failed';
+            }
+          }
+        } else {
+          return 'push-token-failed';
+        }
       }
+    } else if (isExpoGo) {
+      console.log('⚠️ Running in Expo Go - using local notifications only');
+      console.log('💡 To test push notifications, build a standalone APK');
+      return 'expo-go-mode';
     } else {
-      // Running in simulator or Expo Go - push tokens not available
+      console.log('⚠️ No project ID found - push tokens not available');
+      console.log('⚠️ Constants.expoConfig:', Constants.expoConfig);
+      console.log('⚠️ EAS project ID:', Constants.expoConfig?.extra?.eas?.projectId);
+      return 'no-project-id';
     }
 
     // Return token - will be saved to user profile by calling component
-
-    // Return token or a placeholder to indicate permissions are granted
-    return token || 'local-notifications-enabled';
+    const resultToken = token || 'push-token-failed';
+    console.log('📱 Final token result:', resultToken);
+    console.log('📱 Token is valid push token:', resultToken && resultToken.startsWith('ExponentPushToken['));
+    return resultToken;
   }
 
   // Save push token to user profile
@@ -116,6 +196,7 @@ class NotificationService {
 
   // Send push notification via Expo's push service
   async sendPushNotification(expoPushToken, title, body, data = {}) {
+    console.log('📱 NotificationService.sendPushNotification called with title:', title, 'token:', expoPushToken);
     const message = {
       to: expoPushToken,
       sound: 'default',
@@ -136,6 +217,7 @@ class NotificationService {
       });
 
       const result = await response.json();
+      console.log('📱 Expo push service response:', result);
       return result;
     } catch (error) {
       console.error('Error sending push notification:', error);

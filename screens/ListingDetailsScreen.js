@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,12 +21,13 @@ import { useTheme } from '../contexts/ThemeContext';
 import CustomPopup from '../components/CustomPopup';
 import StandardModal from '../components/StandardModal';
 import NotificationManager from '../services/NotificationManager';
-import ListingNotificationService from '../services/ListingNotificationService';
 import ExpirationNotificationService from '../services/ExpirationNotificationService';
 import PaymentTimeoutService from '../services/PaymentTimeoutService';
+import RealTimeActionListener from '../services/RealTimeActionListener';
+import ChatService from '../services/ChatService';
 import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
 import { db } from '../config/firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, doc, updateDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, onSnapshot, doc, updateDoc, getDocs, getDoc, serverTimestamp } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +37,12 @@ const ListingDetailsScreen = ({ navigation, route }) => {
   const { isDarkMode, colors } = useTheme();
   const { listing: initialListing } = route.params || {};
   const [listing, setListing] = useState(initialListing);
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 ListingDetailsScreen - Initial listing:', initialListing);
+    console.log('🔍 ListingDetailsScreen - Route params:', route.params);
+  }, [initialListing, route.params]);
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -110,6 +117,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     onPress: null,
   });
 
+  // Seller data state
+  const [sellerData, setSellerData] = useState(null);
+  const [sellerAddress, setSellerAddress] = useState(null);
+
   // Show instructions with smooth fade-in, then hide after 2.5 seconds with smooth fade-out
   useEffect(() => {
     // Fade in immediately
@@ -131,7 +142,7 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     }, 2500);
 
     return () => clearTimeout(timer);
-  }, [instructionsOpacity]);
+  }, []); // Remove instructionsOpacity dependency to prevent re-running on every render
 
   // Lock button floating animation
   useEffect(() => {
@@ -153,7 +164,82 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     };
 
     startFloating();
-  }, [lockFloatAnim]);
+  }, []); // Remove lockFloatAnim dependency to prevent re-running on every render
+
+  // Initialize real-time action listener
+  useEffect(() => {
+    const initializeServices = async () => {
+      RealTimeActionListener.setCurrentUser(user?.uid);
+    };
+
+    initializeServices();
+  }, [user?.uid]);
+
+  // Add listing to action listener when component mounts
+  useEffect(() => {
+    if (listing?.id && user?.uid) {
+      RealTimeActionListener.addListingInterest(listing.id);
+    }
+
+    // Cleanup when component unmounts
+    return () => {
+      if (listing?.id) {
+        RealTimeActionListener.removeListingInterest(listing.id);
+      }
+    };
+  }, [listing?.id, user?.uid]);
+
+  // Load seller data and address
+  const loadSellerData = async () => {
+    if (!listing?.sellerId) return;
+    
+    try {
+      console.log('👤 Loading seller data for:', listing.sellerId);
+      
+      // Get seller profile data
+      const sellerDoc = await getDoc(doc(db, 'users', listing.sellerId));
+      if (sellerDoc.exists()) {
+        setSellerData(sellerDoc.data());
+        console.log('👤 Seller data loaded:', sellerDoc.data());
+      }
+      
+      // Get seller's default address
+      const addressesQuery = query(
+        collection(db, 'addresses'),
+        where('userId', '==', listing.sellerId),
+        where('isDefault', '==', true)
+      );
+      const addressesSnapshot = await getDocs(addressesQuery);
+      
+      if (!addressesSnapshot.empty) {
+        const defaultAddress = addressesSnapshot.docs[0].data();
+        setSellerAddress(defaultAddress);
+        console.log('🏠 Seller default address loaded:', defaultAddress);
+      } else {
+        // Fallback to first address if no default
+        const allAddressesQuery = query(
+          collection(db, 'addresses'),
+          where('userId', '==', listing.sellerId)
+        );
+        const allAddressesSnapshot = await getDocs(allAddressesQuery);
+        
+        if (!allAddressesSnapshot.empty) {
+          const firstAddress = allAddressesSnapshot.docs[0].data();
+          setSellerAddress(firstAddress);
+          console.log('🏠 Seller first address loaded:', firstAddress);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error loading seller data:', error);
+    }
+  };
+
+  // Load seller data when listing changes
+  useEffect(() => {
+    if (listing?.sellerId) {
+      loadSellerData();
+    }
+  }, [listing?.sellerId]);
 
   // Load activity logs from Firebase
   useEffect(() => {
@@ -216,6 +302,9 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     const unsubscribe = onSnapshot(listingRef, (doc) => {
       if (doc.exists()) {
         const updatedListing = { id: doc.id, ...doc.data() };
+        
+        // Use setTimeout to defer state updates to next tick
+        setTimeout(() => {
         // Update the listing state to reflect real-time changes
         setListing(updatedListing);
         
@@ -223,16 +312,19 @@ const ListingDetailsScreen = ({ navigation, route }) => {
         if (updatedListing.status === 'locked') {
           setRealtimeLocked(true);
           
-          // Show immediate notification that listing was locked
+            // Defer alert to next tick
+            setTimeout(() => {
           Alert.alert(
             '🔒 Item Locked!',
             'This item has been locked by another user and is no longer available.',
             [{ text: 'OK' }]
           );
+            }, 100);
           
           // Auto-hide the real-time lock notification after 3 seconds
           setTimeout(() => setRealtimeLocked(false), 3000);
         }
+        }, 0);
       } else {
         }
     }, (error) => {
@@ -306,8 +398,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
 
       // Check if the date is valid
       if (isNaN(endTime.getTime())) {
+        setTimeout(() => {
         setIsExpired(true);
         setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        }, 0);
         return;
       }
 
@@ -315,8 +409,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
 
       if (timeDiff <= 0) {
         // Listing has expired
+        setTimeout(() => {
         setIsExpired(true);
         setTimeRemaining({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+        }, 0);
       } else {
         // Calculate time remaining
         const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
@@ -324,8 +420,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
         const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
 
+        setTimeout(() => {
         setIsExpired(false);
         setTimeRemaining({ days, hours, minutes, seconds });
+        }, 0);
       }
     };
 
@@ -373,7 +471,7 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     }
 
     return () => stopPulsing();
-  }, [timerUrgency, timerPulseAnim]);
+  }, [timerUrgency]); // Remove timerPulseAnim dependency to prevent re-running on every render
 
   // Validation functions
   const validateMSLAction = (actionType, price) => {
@@ -591,39 +689,49 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       return;
     }
 
+    setTimeout(() => {
     setActiveButton('mine');
+    }, 0);
     await addActivityLog('Mined', price, user);
     
-    // Send notifications
-    await ListingNotificationService.notifySeller(
-      listing.id,
-      'Mined',
-      user.displayName || user.email,
-      price,
-      user.uid
-    );
-    await ListingNotificationService.notifyParticipants(
-      listing.id,
-      'Mined',
-      user.displayName || user.email,
-      price,
-      user.uid
-    );
-    
-    setActionSuccess('Mined');
-    setTimeout(() => setActionSuccess(null), 2000);
-    
-    // Show success modal
-    showSuccess(
-      '🎉 Mined!',
-      `You successfully mined this item for ₱${price}!`,
-      () => {
-        setShowSuccessModal(false);
-        setActiveButton(null);
-        setActionSuccess('Mine');
-        setTimeout(() => setActionSuccess(null), 2000);
+    // Send notifications via NotificationManager (includes push notifications)
+    await NotificationManager.createNotification(
+      listing.sellerId,
+      '⛏️ Item Mined!',
+      `${user.displayName || user.email} mined "${listing.title}" for ₱${price}`,
+      {
+        type: 'action_performed',
+        listingId: listing.id,
+        actionType: 'Mined',
+        performerId: user.uid,
+        performerName: user.displayName || user.email,
+        price: price
       }
     );
+    // Create chat with seller
+    console.log('🔄 Creating chat from Mine action for users:', user.uid, listing.sellerId || listing.userId);
+    await ChatService.createChatFromAction(listing.id, 'mine', user.uid, user.displayName || user.email, listing);
+    
+    setTimeout(() => {
+    setActionSuccess('Mined');
+    setTimeout(() => setActionSuccess(null), 2000);
+    }, 0);
+    
+    // Show success modal
+    setTimeout(() => {
+      showSuccess(
+        '🎉 Mined!',
+        `You successfully mined this item for ₱${price}!`,
+        () => {
+          setTimeout(() => {
+            setShowSuccessModal(false);
+            setActiveButton(null);
+            setActionSuccess('Mine');
+            setTimeout(() => setActionSuccess(null), 2000);
+          }, 0);
+        }
+      );
+    }, 0);
   };
 
   const handleSteal = async () => {
@@ -643,46 +751,57 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       return;
     }
 
+    setTimeout(() => {
     setActiveButton('steal');
+    }, 0);
     await addActivityLog('Stole', price, user);
     
-    // Send notifications
-    await ListingNotificationService.notifySeller(
-      listing.id,
-      'Stole',
-      user.displayName || user.email,
-      price,
-      user.uid
-    );
-    await ListingNotificationService.notifyParticipants(
-      listing.id,
-      'Stole',
-      user.displayName || user.email,
-      price,
-      user.uid
-    );
-    
-    setActionSuccess('Stole');
-    setTimeout(() => setActionSuccess(null), 2000);
-    
-    // Show success modal
-    showSuccess(
-      '⚡ Stole!',
-      `You successfully stole this item for ₱${price}!`,
-      () => {
-        setShowSuccessModal(false);
-        setActiveButton(null);
-        setActionSuccess('Steal');
-        setTimeout(() => setActionSuccess(null), 2000);
+    // Send notifications via NotificationManager (includes push notifications)
+    await NotificationManager.createNotification(
+      listing.sellerId,
+      '⚡ Item Stolen!',
+      `${user.displayName || user.email} stole "${listing.title}" for ₱${price}`,
+      {
+        type: 'action_performed',
+        listingId: listing.id,
+        actionType: 'Stole',
+        performerId: user.uid,
+        performerName: user.displayName || user.email,
+        price: price
       }
     );
+    
+    // Create chat with seller
+    console.log('🔄 Creating chat from Steal action for users:', user.uid, listing.sellerId || listing.userId);
+    await ChatService.createChatFromAction(listing.id, 'steal', user.uid, user.displayName || user.email, listing);
+    
+    setTimeout(() => {
+    setActionSuccess('Stole');
+    setTimeout(() => setActionSuccess(null), 2000);
+    }, 0);
+    
+    // Show success modal
+    setTimeout(() => {
+      showSuccess(
+        '⚡ Stole!',
+        `You successfully stole this item for ₱${price}!`,
+        () => {
+          setTimeout(() => {
+            setShowSuccessModal(false);
+            setActiveButton(null);
+            setActionSuccess('Steal');
+            setTimeout(() => setActionSuccess(null), 2000);
+          }, 0);
+        }
+      );
+    }, 0);
   };
 
 
-  // Trigger payment flow for lock action
+  // Trigger payment flow for expired listings (NOT for lock actions)
   const triggerPaymentFlow = async (listingId, actionType, price, user) => {
     try {
-      // Triggering payment flow for lock action
+      // Triggering payment flow for expired listing
       
       // Create payment notification for the user who locked
       const title = `🎉 You Won! Payment Required`;
@@ -738,7 +857,42 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleMessageSeller = async () => {
+    try {
+      console.log('🔄 Navigating to chat screen for users:', user.uid, listing.sellerId);
+      console.log('🔄 Seller data:', {
+        sellerId: listing.sellerId,
+        sellerName: listing.sellerName,
+        sellerData: sellerData
+      });
+      
+      // Get the correct display price based on listing type
+      const displayPrice = ChatService.getDisplayPrice(listing);
+      
+      // Navigate to chat screen without creating chat yet
+      // Chat will be created when user sends their first message
+      navigation.navigate('Chat', {
+        chatId: null, // No chat ID yet - will be created on first message
+        otherUser: {
+          id: listing.sellerId, // Use sellerId directly
+          name: listing.sellerName || sellerData?.displayName || 'Seller',
+          avatar: sellerData?.avatar || listing.sellerAvatar,
+        },
+        listing: {
+          id: listing.id,
+          title: listing.title || listing.listingTitle,
+          price: displayPrice,
+          image: listing.images?.[0] || listing.image,
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error navigating to chat:', error);
+      Alert.alert('Error', 'Failed to start conversation. Please try again.');
+    }
+  };
+
   const handleLock = async () => {
+    console.log('🔒 handleLock called - START');
     const price = listing.lockPrice;
     
     // Validate price is defined
@@ -755,7 +909,9 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       return;
     }
 
+    setTimeout(() => {
     setActiveButton('lock');
+    }, 0);
     
     try {
       // Update listing status to 'locked' to close it
@@ -770,42 +926,68 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       
       await addActivityLog('Locked', price, user);
       
-      // Send notifications
-      await ListingNotificationService.notifySeller(
-        listing.id,
-        'Locked',
-        user.displayName || user.email,
-        price,
-        user.uid
-      );
-      await ListingNotificationService.notifyParticipants(
-        listing.id,
-        'Locked',
-        user.displayName || user.email,
-        price,
-        user.uid
-      );
+      // Send notifications via NotificationManager (includes push notifications)
+      // Note: Notifications are sent in triggerPaymentFlow function
 
-      // Immediately trigger payment flow for lock action
-      await triggerPaymentFlow(listing.id, 'Locked', price, user);
+      // Create chat with seller
+      console.log('🔄 Creating chat from Lock action for users:', user.uid, listing.sellerId || listing.userId);
+      await ChatService.createChatFromAction(listing.id, 'lock', user.uid, user.displayName || user.email, listing);
+
+      // Send payment notification immediately for lock action (no need for triggerPaymentFlow)
+      setTimeout(async () => {
+        console.log('🔔 Sending lock notification to user:', user.uid);
+        await NotificationManager.createNotification(
+          user.uid,
+          '🎉 You Won! Payment Required',
+          `Congratulations! You locked "${listing.title}" and won the item. Please submit your payment proof to complete the purchase.`,
+          {
+            type: 'payment_required',
+            listingId: listing.id,
+            actionType: 'Locked',
+            amount: price,
+            sellerId: listing.sellerId,
+          }
+        );
+        console.log('🔔 Lock notification sent to user:', user.uid);
+        
+        // Notify seller about the winner
+        await NotificationManager.createNotification(
+          listing.sellerId,
+          '🏆 Winner Determined!',
+          `Your listing "${listing.title}" has been locked. ${user.displayName || user.email} won with Lock action. They will submit payment proof soon.`,
+          {
+            type: 'winner_determined',
+            listingId: listing.id,
+            winnerId: user.uid,
+            winnerName: user.displayName || user.email,
+            actionType: 'Locked',
+          }
+        );
+      }, 0);
       
+      setTimeout(() => {
       setActionSuccess('Locked');
       setTimeout(() => setActionSuccess(null), 2000);
+      }, 0);
       
       // Show success modal with payment option
-      showSuccess(
-        '🔒 Locked!',
-        `You successfully locked this item for ₱${price}! The listing is now closed. You can now submit your payment proof.`,
-        () => {
-          setShowSuccessModal(false);
+      setTimeout(() => {
+        showSuccess(
+          '🔒 Locked!',
+          `You successfully locked this item for ₱${price}! The listing is now closed. You can now submit your payment proof.`,
+          () => {
+            setTimeout(() => {
+              setShowSuccessModal(false);
           // Navigate to payment screen
           navigation.navigate('Payment', {
             listingId: listing.id,
             actionType: 'Locked',
             price: price,
           });
-        }
-      );
+            }, 0);
+          }
+        );
+      }, 0);
     } catch (error) {
       console.error('❌ Error locking listing:', error);
       showError('Failed to lock the listing. Please try again.');
@@ -813,8 +995,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
   };
 
   const handleBid = async () => {
+    setTimeout(() => {
     setActiveButton('bid');
     setShowBidModal(true);
+    }, 0);
   };
 
   const submitBid = async () => {
@@ -897,26 +1081,41 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       await updateDoc(listingRef, updateData);
       // Add activity log
       await addActivityLog('Bid', bid, user);
-      // Send notifications
-      await ListingNotificationService.notifyNewBid(
-        listing.id,
-        user.displayName || user.email,
-        bid,
-        user.uid
+      // Send notifications via NotificationManager (includes push notifications)
+      await NotificationManager.createNotification(
+        listing.sellerId,
+        '💰 New Bid Placed!',
+        `${user.displayName || user.email} placed a bid of ₱${bid} on "${listing.title}"`,
+        {
+          type: 'new_bid',
+          listingId: listing.id,
+          bidderId: user.uid,
+          bidderName: user.displayName || user.email,
+          bidAmount: bid
+        }
       );
+      
+      // Create chat with seller
+      console.log('🔄 Creating chat from Bid action for users:', user.uid, listing.sellerId || listing.userId);
+      await ChatService.createChatFromAction(listing.id, 'bid', user.uid, user.displayName || user.email, listing);
+      
       // Show success
-      showSuccess(
+      setTimeout(() => {
+        showSuccess(
         'Bid Submitted!',
         `Your bid of ₱${bid} has been placed successfully`,
         () => {
-          setShowSuccessModal(false);
+            setTimeout(() => {
+              setShowSuccessModal(false);
           setShowBidModal(false);
           setBidAmount('');
           setActiveButton(null);
           setActionSuccess('Bid');
           setTimeout(() => setActionSuccess(null), 2000);
+            }, 0);
         }
       );
+      }, 0);
 
     } catch (error) {
       console.error('Error submitting bid:', error);
@@ -1028,8 +1227,8 @@ const ListingDetailsScreen = ({ navigation, route }) => {
   const isBidding = listing?.priceType === 'bidding';
   const isOwnListing = listing && listing.userId && user && user.uid === listing.userId;
   
-  // Get timer urgency level
-  const getTimerUrgency = () => {
+  // Get timer urgency level - memoized to prevent render issues
+  const timerUrgency = useMemo(() => {
     if (isExpired) return 'expired';
     
     const { days, hours, minutes, seconds } = timeRemaining;
@@ -1039,9 +1238,49 @@ const ListingDetailsScreen = ({ navigation, route }) => {
     if (totalMinutes <= 30) return 'warning'; // Last 30 minutes
     if (totalMinutes <= 60) return 'caution'; // Last hour
     return 'safe'; // More than 1 hour
-  };
-  
-  const timerUrgency = getTimerUrgency();
+  }, [isExpired, timeRemaining]);
+
+  // Get timer display text - memoized to prevent render issues
+  const timerDisplayText = useMemo(() => {
+    if (isExpired) {
+      return 'EXPIRED';
+    }
+    
+    // Show countdown timer
+    const { days, hours, minutes, seconds } = timeRemaining;
+    
+    // Check for NaN values
+    if (isNaN(days) || isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+      return 'Invalid Date';
+    }
+    
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }, [isExpired, timeRemaining]);
+
+  // Early return if listing is null or invalid
+  if (!listing || !listing.id) {
+  return (
+      <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ fontFamily: 'Poppins-Regular', color: '#666', textAlign: 'center' }}>
+          Listing not found or invalid data
+        </Text>
+        <TouchableOpacity 
+          style={{ marginTop: 20, padding: 10, backgroundColor: '#83AFA7', borderRadius: 8 }}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: 'white', fontFamily: 'Poppins-Medium' }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
@@ -1097,35 +1336,15 @@ const ListingDetailsScreen = ({ navigation, route }) => {
               timerUrgency === 'caution' && styles.timerTextCaution,
               timerUrgency === 'expired' && styles.timerTextExpired
             ]}>
-              {(() => {
-                if (isExpired) {
-                  return 'EXPIRED';
-                }
-                
-                // Show countdown timer
-                const { days, hours, minutes, seconds } = timeRemaining;
-                
-                // Check for NaN values
-                if (isNaN(days) || isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
-                  return 'Invalid Date';
-                }
-                
-                if (days > 0) {
-                  return `${days}d ${hours}h ${minutes}m`;
-                } else if (hours > 0) {
-                  return `${hours}h ${minutes}m ${seconds}s`;
-                } else if (minutes > 0) {
-                  return `${minutes}m ${seconds}s`;
-                } else {
-                  return `${seconds}s`;
-                }
-              })()}
+              {timerDisplayText}
             </Text>
           </Animated.View>
         </View>
-        <TouchableOpacity style={styles.shareButton}>
-          <Ionicons name="share-outline" size={24} color="#83AFA7" />
+        {!isOwnListing && (
+          <TouchableOpacity style={styles.messageButton} onPress={handleMessageSeller}>
+            <Ionicons name="chatbubble-outline" size={24} color="#83AFA7" />
         </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -1285,10 +1504,6 @@ const ListingDetailsScreen = ({ navigation, route }) => {
                 <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Size:</Text>
                 <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>{listing.size || 'N/A'}</Text>
               </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Color:</Text>
-                <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>{listing.color || 'N/A'}</Text>
-              </View>
             </View>
           </View>
 
@@ -1299,14 +1514,24 @@ const ListingDetailsScreen = ({ navigation, route }) => {
             </Text>
             <View style={styles.sellerInfo}>
               <View style={styles.sellerAvatar}>
+                {sellerData?.avatar ? (
+                  <Image 
+                    source={{ uri: sellerData.avatar }} 
+                    style={styles.sellerAvatarImage}
+                  />
+                ) : (
                 <Ionicons name="person" size={24} color="#83AFA7" />
+                )}
               </View>
               <View style={styles.sellerDetails}>
                 <Text style={[styles.sellerName, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
-                  {listing.sellerName || 'Unknown Seller'}
+                  {listing.sellerName || sellerData?.displayName || 'Unknown Seller'}
                 </Text>
                 <Text style={[styles.sellerLocation, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
-                  {listing.location || 'Location not specified'}
+                  {sellerAddress ? 
+                    (sellerAddress.cityName || sellerAddress.city || 'City not specified') :
+                    (listing.location || 'Location not specified')
+                  }
                 </Text>
               </View>
             </View>
@@ -1599,6 +1824,7 @@ const ListingDetailsScreen = ({ navigation, route }) => {
         )}
       </View>
 
+
       {/* Swipe Direction Indicator */}
       {swipeDirection && (
         <View style={[styles.swipeIndicator, swipeDirection === 'left' && styles.swipeLeft, swipeDirection === 'right' && styles.swipeRight, swipeDirection === 'up' && styles.swipeUp]}>
@@ -1649,8 +1875,10 @@ const ListingDetailsScreen = ({ navigation, route }) => {
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]} 
                 onPress={() => {
+                  setTimeout(() => {
                   setShowBidModal(false);
                   setActiveButton(null);
+                  }, 0);
                 }}
               >
                 <Text style={[styles.modalButtonText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
@@ -2131,7 +2359,7 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 12,
   },
-  shareButton: {
+  messageButton: {
     padding: 6,
     borderRadius: 16,
     backgroundColor: '#F8F9FA',
@@ -2294,7 +2522,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   sellerSection: {
-    marginBottom: 8,
+    marginBottom: 80,
     padding: 0,
     backgroundColor: 'transparent',
     borderRadius: 0,
@@ -2314,6 +2542,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 0,
+    overflow: 'hidden',
+  },
+  sellerAvatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   sellerDetails: {
     flex: 1,

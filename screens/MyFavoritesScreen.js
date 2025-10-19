@@ -265,7 +265,12 @@ const MyFavoritesScreen = ({ navigation }) => {
                 <TouchableOpacity
                   key={index}
                   style={styles.listingCard}
-                  onPress={() => navigation.navigate('ListingDetails', { listing: listing })}
+                  onPress={() => {
+                    console.log('🔍 MyFavoritesScreen - Navigating to ListingDetails with:', listing);
+                    navigation.navigate('ListingDetails', { 
+                      listing: { ...listing, fromFavorites: true } 
+                    });
+                  }}
                 >
                   <Image
                     source={{ 
@@ -302,7 +307,7 @@ const MyFavoritesScreen = ({ navigation }) => {
                     style={styles.removeButton}
                     onPress={() => showRemoveConfirmation(listing)}
                   >
-                    <Ionicons name="heart" size={20} color="#FF6B6B" />
+                    <Ionicons name="heart" size={18} color="#FF6B6B" />
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))}
@@ -354,7 +359,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   headerTitle: {
-    fontSize: Platform.OS === 'android' ? 16 : 18,
+    fontSize: 18,
   },
   headerSpacer: {
     width: 32,
@@ -431,56 +436,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   countSection: {
-    marginTop: 20,
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 12,
   },
   countText: {
-    fontSize: Platform.OS === 'android' ? 14 : 16,
+    fontSize: 13,
     color: '#666',
   },
   listingsContainer: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   listingCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 10,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#E0E0E0',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
     }),
   },
   listingImage: {
-    width: Platform.OS === 'android' ? 80 : 100,
-    height: Platform.OS === 'android' ? 80 : 100,
-    borderRadius: 12,
-    margin: 12,
+    width: 70,
+    height: 70,
+    borderRadius: 10,
+    margin: 10,
     resizeMode: 'cover',
   },
   listingContent: {
     flex: 1,
-    padding: 12,
+    padding: 10,
     justifyContent: 'center',
   },
   listingTitle: {
-    fontSize: Platform.OS === 'android' ? 14 : 16,
+    fontSize: 13,
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 3,
+    lineHeight: 16,
   },
   listingPrice: {
-    fontSize: Platform.OS === 'android' ? 16 : 18,
+    fontSize: 14,
     color: '#83AFA7',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   listingMeta: {
     flexDirection: 'row',
@@ -488,17 +494,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   listingStatus: {
-    fontSize: Platform.OS === 'android' ? 11 : 12,
+    fontSize: 10,
   },
   listingTime: {
-    fontSize: Platform.OS === 'android' ? 10 : 11,
+    fontSize: 9,
     color: '#666',
   },
   removeButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    padding: 4,
+    top: 8,
+    right: 8,
+    padding: 3,
   },
 });
 

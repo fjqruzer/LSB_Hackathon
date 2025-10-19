@@ -37,7 +37,7 @@ export const uploadImageToCloudinary = async (imageUri) => {
     // Create FormData for multipart upload
     const formData = new FormData();
     
-    // Add the image file with proper format
+    // Add the image file with proper format for Android compatibility
     formData.append('file', {
       uri: imageUri,
       type: 'image/jpeg',

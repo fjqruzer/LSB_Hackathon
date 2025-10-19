@@ -11,13 +11,17 @@ import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import PaymentScreen from '../screens/PaymentScreen';
 import MyPaymentsScreen from '../screens/MyPaymentsScreen';
 import MyShopScreen from '../screens/MyShopScreen';
+import BuyerCommentsScreen from '../screens/BuyerCommentsScreen';
 import MySalesScreen from '../screens/MySalesScreen';
 import MyFavoritesScreen from '../screens/MyFavoritesScreen';
 import MyPasswordScreen from '../screens/MyPasswordScreen';
-import MySettingsScreen from '../screens/MySettingsScreen';
+import MyAddressScreen from '../screens/MyAddressScreen';
+import PaymentApprovalScreen from '../screens/PaymentApprovalScreen';
 import PostListingScreen from '../screens/PostListingScreen';
-import NotificationTestScreen from '../screens/NotificationTestScreen';
 import ListingDetailsScreen from '../screens/ListingDetailsScreen';
+import ChatListScreen from '../screens/ChatListScreen';
+import ChatScreen from '../screens/ChatScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useNotificationNavigation } from '../contexts/NotificationNavigationContext';
@@ -78,19 +82,88 @@ const MainNavigationContent = () => {
         return <MarketplaceScreen 
           onListingPress={handleListingPress} 
           onNavigateToFavorites={() => setCurrentScreen('MyFavorites')}
+          navigation={{ navigate: (screen, params) => {
+            if (screen === 'messages') {
+              setCurrentScreen('messages');
+            } else if (screen === 'Chat') {
+              setCurrentScreen('Chat');
+              setPaymentParams(params);
+            } else {
+              setCurrentScreen(screen);
+            }
+          }}}
         />;
       case 'people':
-        return <PeopleScreen />;
-      case 'updates':
-        return <UpdatesScreen navigation={{ navigate: (screen, params) => {
-          if (screen === 'Payment') {
-            setCurrentScreen('Payment');
-            // Store params for PaymentScreen
+        return <PeopleScreen navigation={{ navigate: (screen, params) => {
+          if (screen === 'UserProfile') {
+            setCurrentScreen('UserProfile');
             setPaymentParams(params);
           } else {
             setCurrentScreen(screen);
           }
         } }} />;
+      case 'messages':
+        return <ChatListScreen navigation={{ 
+          goBack: () => setCurrentScreen('marketplace'),
+          navigate: (screen, params) => {
+            if (screen === 'Chat') {
+              setCurrentScreen('Chat');
+              setPaymentParams(params);
+            } else {
+              setCurrentScreen(screen);
+            }
+          }
+        }} />;
+      case 'Chat':
+        return (
+          <ChatScreen 
+            navigation={{ goBack: () => setCurrentScreen('messages') }}
+            route={{ params: paymentParams || { chatId: 'test', otherUser: { id: 'test', name: 'Test User' } } }}
+          />
+        );
+      case 'UserProfile':
+        return (
+          <UserProfileScreen 
+            navigation={{ 
+              goBack: () => setCurrentScreen('people'),
+              navigate: (screen, params) => {
+                if (screen === 'Chat') {
+                  setCurrentScreen('Chat');
+                  setPaymentParams(params);
+                } else if (screen === 'ListingDetails') {
+                  console.log('🔍 MainNavigation - UserProfileScreen navigating to ListingDetails with:', params);
+                  setCurrentListing(params.listing);
+                  setCurrentScreen('ListingDetails');
+                } else {
+                  setCurrentScreen(screen);
+                }
+              }
+            }}
+            route={{ params: paymentParams || { userId: 'test' } }}
+          />
+        );
+      case 'updates':
+        return <UpdatesScreen navigation={{ 
+          navigate: (screen, params) => {
+            if (screen === 'Payment') {
+              setCurrentScreen('Payment');
+              setPaymentParams(params);
+            } else if (screen === 'MyPayments') {
+              setCurrentScreen('MyPayments');
+            } else if (screen === 'PaymentApproval') {
+              setCurrentScreen('PaymentApproval');
+            } else if (screen === 'ListingDetails') {
+              setCurrentListing(params?.listing);
+              setCurrentScreen('ListingDetails');
+            } else {
+              setCurrentScreen(screen);
+            }
+          },
+          goBack: () => {
+            // Handle goBack if needed
+            console.log('UpdatesScreen goBack called');
+          }
+        }} />;
       case 'profile':
         return <ProfileScreen navigation={{ 
           navigate: (screen) => {
@@ -178,6 +251,17 @@ const MainNavigationContent = () => {
             }}
           />
         );
+      case 'BuyerComments':
+        return (
+          <BuyerCommentsScreen 
+            navigation={{ 
+              goBack: () => setCurrentScreen('profile'),
+              navigate: (screen, params) => {
+                setCurrentScreen(screen);
+              }
+            }}
+          />
+        );
       case 'MySales':
         return (
           <MySalesScreen 
@@ -202,7 +286,8 @@ const MainNavigationContent = () => {
               goBack: () => setCurrentScreen('profile'),
               navigate: (screen, params) => {
                 if (screen === 'ListingDetails') {
-                  setCurrentListing(params);
+                  console.log('🔍 MainNavigation - MyFavorites navigate to ListingDetails with params:', params);
+                  setCurrentListing(params.listing);
                   setCurrentScreen('ListingDetails');
                 } else if (screen === 'marketplace') {
                   setCurrentScreen('marketplace');
@@ -221,22 +306,19 @@ const MainNavigationContent = () => {
             }}
           />
         );
-      case 'MySettings':
+      case 'MyAddress':
         return (
-          <MySettingsScreen 
+          <MyAddressScreen 
             navigation={{ 
-              goBack: () => setCurrentScreen('profile'),
-              navigate: (screen) => {
-                if (screen === 'MyPassword') {
-                  setCurrentScreen('MyPassword');
-                } else if (screen === 'EditProfile') {
-                  setCurrentScreen('EditProfile');
-                } else if (screen === 'Login') {
-                  setCurrentScreen('Login');
-                } else {
-                  setCurrentScreen(screen);
-                }
-              }
+              goBack: () => setCurrentScreen('profile')
+            }}
+          />
+        );
+      case 'PaymentApproval':
+        return (
+          <PaymentApprovalScreen 
+            navigation={{ 
+              goBack: () => setCurrentScreen('profile')
             }}
           />
         );
@@ -249,27 +331,39 @@ const MainNavigationContent = () => {
             setSelectedPhotos={setSelectedPhotos}
           />
         );
-      case 'NotificationTest':
-        return (
-          <NotificationTestScreen 
-            navigation={{ goBack: () => setCurrentScreen('profile') }}
-          />
-        );
       case 'ListingDetails':
         return (
           <ListingDetailsScreen 
             navigation={{ 
-              goBack: () => setCurrentScreen('marketplace'),
+              goBack: () => {
+                // Go back to the previous screen (could be marketplace, favorites, shop, etc.)
+                if (currentScreen === 'ListingDetails') {
+                  // If we came from favorites, go back to favorites
+                  if (currentListing?.fromFavorites) {
+                    setCurrentScreen('MyFavorites');
+                  } else if (currentListing?.fromShop) {
+                    setCurrentScreen('MyShop');
+                  } else if (currentListing?.fromMarketplace) {
+                    setCurrentScreen('marketplace');
+                  } else {
+                    setCurrentScreen('marketplace');
+                  }
+                }
+              },
               navigate: (screen, params) => {
                 if (screen === 'Payment') {
                   setCurrentScreen('Payment');
                   setPaymentParams(params);
-                  } else {
+                } else if (screen === 'Chat') {
+                  setCurrentScreen('Chat');
+                  setPaymentParams(params);
+                } else {
                   setCurrentScreen(screen);
                 }
               }
             }}
             route={{ params: { listing: currentListing } }}
+            key={`listing-details-${currentListing?.id || 'unknown'}`}
           />
         );
       default:
@@ -278,6 +372,7 @@ const MainNavigationContent = () => {
   };
 
   const handleScreenChange = (screenId) => {
+    console.log('🔍 MainNavigation - Screen changing to:', screenId);
     if (screenId === 'add') {
       setCurrentScreen('PostListing');
     } else {
@@ -286,7 +381,8 @@ const MainNavigationContent = () => {
   };
 
   const handleListingPress = (listing) => {
-    setCurrentListing(listing);
+    console.log('🔍 MainNavigation - handleListingPress called with:', listing);
+    setCurrentListing({ ...listing, fromMarketplace: true });
     setCurrentScreen('ListingDetails');
   };
 
@@ -307,6 +403,24 @@ const MainNavigationContent = () => {
         isWinner: true
       });
       setCurrentScreen('Payment');
+    } else if (notificationData.type === 'payment_submitted' && notificationData.listingId) {
+      // Navigate to payment approval screen for seller
+      setPaymentParams({
+        listingId: notificationData.listingId,
+        paymentId: notificationData.paymentId,
+        actionType: notificationData.actionType,
+        amount: notificationData.amount,
+        buyerId: notificationData.buyerId,
+        buyerName: notificationData.buyerName,
+        isSeller: true
+      });
+      setCurrentScreen('PaymentApproval');
+    } else if (notificationData.type === 'payment_approved' && notificationData.listingId) {
+      // Navigate to MyPayments screen for buyer (payment approved)
+      setCurrentScreen('MyPayments');
+    } else if (notificationData.type === 'payment_rejected' && notificationData.listingId) {
+      // Navigate to MyPayments screen for buyer (payment rejected)
+      setCurrentScreen('MyPayments');
     } else if (notificationData.type === 'winner_determined' && notificationData.listingId) {
       // Navigate to listing details for seller
       fetchListingAndNavigate(notificationData.listingId);
@@ -318,11 +432,30 @@ const MainNavigationContent = () => {
   // Fetch listing and navigate to details
   const fetchListingAndNavigate = async (listingId) => {
     try {
-      // This would need to be implemented to fetch listing from Firestore
-      // For now, we'll just navigate to marketplace
+      console.log('🔍 MainNavigation - Fetching listing for ID:', listingId);
+      
+      // Import Firestore functions
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('../config/firebase');
+      
+      // Fetch listing from Firestore
+      const listingDoc = await getDoc(doc(db, 'listings', listingId));
+      
+      if (listingDoc.exists()) {
+        const listingData = {
+          id: listingDoc.id,
+          ...listingDoc.data()
+        };
+        
+        console.log('🔍 MainNavigation - Fetched listing:', listingData);
+        setCurrentListing(listingData);
+        setCurrentScreen('ListingDetails');
+      } else {
+        console.log('🔍 MainNavigation - Listing not found, going to marketplace');
       setCurrentScreen('marketplace');
+      }
     } catch (error) {
-      console.error('Error fetching listing:', error);
+      console.error('❌ MainNavigation - Error fetching listing:', error);
       setCurrentScreen('marketplace');
     }
   };
@@ -330,7 +463,7 @@ const MainNavigationContent = () => {
   return (
     <View key={forceUpdate} style={styles.container}>
       {renderScreen()}
-      {currentScreen !== 'PostListing' && currentScreen !== 'ListingDetails' && currentScreen !== 'EditProfile' && currentScreen !== 'PaymentMethods' && currentScreen !== 'Payment' && currentScreen !== 'MyShop' && currentScreen !== 'MySales' && currentScreen !== 'MyFavorites' && currentScreen !== 'MyPassword' && currentScreen !== 'MySettings' && (
+      {currentScreen !== 'PostListing' && currentScreen !== 'ListingDetails' && currentScreen !== 'EditProfile' && currentScreen !== 'PaymentMethods' && currentScreen !== 'Payment' && currentScreen !== 'MyShop' && currentScreen !== 'MySales' && currentScreen !== 'MyFavorites' && currentScreen !== 'MyPassword' && currentScreen !== 'PaymentApproval' && currentScreen !== 'messages' && currentScreen !== 'Chat' && currentScreen !== 'UserProfile' && currentScreen !== 'MyPayments' && currentScreen !== 'MyAddress' && currentScreen !== 'BuyerComments' && (
         <BottomNavigation 
           currentScreen={currentScreen}
           onScreenChange={handleScreenChange}

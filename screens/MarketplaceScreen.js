@@ -18,11 +18,14 @@ import {
   import { useSafeAreaInsets } from "react-native-safe-area-context"
   import { useFonts } from 'expo-font'
 import { useTheme } from '../contexts/ThemeContext'
-import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore'
+import { collection, query, orderBy, onSnapshot, where, doc, updateDoc, arrayUnion, arrayRemove, getDoc, getDocs } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { useAuth } from '../contexts/AuthContext'
+import RealTimeActionListener from '../services/RealTimeActionListener'
+import ActionAlertService from '../services/ActionAlertService'
+import ChatService from '../services/ChatService'
   
-  const Marketplace = ({ onListingPress, onNavigateToFavorites }) => {
+  const Marketplace = ({ onListingPress, onNavigateToFavorites, navigation }) => {
     const insets = useSafeAreaInsets()
     const { user } = useAuth()
     const { isDarkMode, colors } = useTheme()
@@ -44,6 +47,8 @@ import { useAuth } from '../contexts/AuthContext'
     const [countdownTimers, setCountdownTimers] = useState({}) // Store countdown for each listing
     const [pulseAnimations, setPulseAnimations] = useState({}) // Store pulse animations for each listing
     const [favorites, setFavorites] = useState([]) // Store user's favorite listing IDs
+    const [following, setFollowing] = useState([]) // Store user's following list
+    const [unreadCount, setUnreadCount] = useState(0) // Store unread message count
     
     // Use safe area insets for proper padding on all devices, with fallbacks
     const topPadding = insets.top || (Platform.OS === "ios" ? Constants.statusBarHeight : 0)
@@ -61,6 +66,54 @@ import { useAuth } from '../contexts/AuthContext'
         }
       } catch (error) {
         console.error('Error fetching favorites:', error);
+      }
+    };
+
+    // Fetch user's following list
+    const fetchFollowing = async () => {
+      if (!user) return;
+      
+      try {
+        const followingQuery = query(
+          collection(db, 'following'),
+          where('followerId', '==', user.uid)
+        );
+        const snapshot = await getDocs(followingQuery);
+        
+        const followingList = [];
+        snapshot.forEach((doc) => {
+          followingList.push(doc.data().followingId);
+        });
+        
+        setFollowing(followingList);
+        console.log('📋 Fetched following list:', followingList);
+      } catch (error) {
+        console.error('Error fetching following list:', error);
+      }
+    };
+
+    // Fetch unread message count
+    const fetchUnreadCount = async () => {
+      if (!user) return;
+      
+      try {
+        const chatsQuery = query(
+          collection(db, 'chats'),
+          where('participants', 'array-contains', user.uid)
+        );
+        const chatsSnapshot = await getDocs(chatsQuery);
+        
+        let totalUnread = 0;
+        chatsSnapshot.docs.forEach(chatDoc => {
+          const chatData = chatDoc.data();
+          const unreadCount = chatData.unreadCount?.[user.uid] || 0;
+          totalUnread += unreadCount;
+        });
+        
+        setUnreadCount(totalUnread);
+        console.log('💬 Unread message count:', totalUnread);
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
       }
     };
 
@@ -99,8 +152,30 @@ import { useAuth } from '../contexts/AuthContext'
     useEffect(() => {
       const fetchListings = () => {
         try {
-          // Fetch user's favorites first
+          // Fetch user's favorites, following, and unread count first
           fetchFavorites();
+          fetchFollowing();
+          fetchUnreadCount();
+          
+          // Set up real-time listener for unread count
+          let unsubscribeChats = null;
+          if (user) {
+            const chatsQuery = query(
+              collection(db, 'chats'),
+              where('participants', 'array-contains', user.uid)
+            );
+            
+            unsubscribeChats = onSnapshot(chatsQuery, (snapshot) => {
+              let totalUnread = 0;
+              snapshot.docs.forEach(chatDoc => {
+                const chatData = chatDoc.data();
+                const unreadCount = chatData.unreadCount?.[user.uid] || 0;
+                totalUnread += unreadCount;
+              });
+              setUnreadCount(totalUnread);
+            });
+          }
+          
           // Simple query without composite index - just get all listings
           const q = query(collection(db, 'listings'))
           
@@ -127,7 +202,11 @@ import { useAuth } from '../contexts/AuthContext'
             setRefreshing(false)
           })
           
-          return unsubscribe
+          // Return a cleanup function that unsubscribes from both listeners
+          return () => {
+            if (unsubscribe) unsubscribe();
+            if (unsubscribeChats) unsubscribeChats();
+          }
         } catch (error) {
           console.error('Error setting up listings listener:', error)
           setLoading(false)
@@ -135,13 +214,23 @@ import { useAuth } from '../contexts/AuthContext'
         }
       }
       
-      const unsubscribe = fetchListings()
+      const cleanup = fetchListings()
       return () => {
-        if (unsubscribe) {
-          unsubscribe()
+        if (cleanup) {
+          cleanup()
         }
       }
     }, [])
+
+    // Initialize action alert services
+    useEffect(() => {
+      const initializeServices = async () => {
+        await ActionAlertService.initialize()
+        RealTimeActionListener.setCurrentUser(user?.uid)
+      }
+
+      initializeServices()
+    }, [user?.uid])
 
     // Update countdown timers for all listings
     useEffect(() => {
@@ -319,12 +408,8 @@ import { useAuth } from '../contexts/AuthContext'
           matchesTab = listing?.priceType === 'bidding'
           break
         case 'following':
-          // For now, show all listings. In the future, this would filter by followed users
-          matchesTab = true
-          break
-        case 'locale':
-          // For now, show all listings. In the future, this would filter by location
-          matchesTab = true
+          // Filter listings from users that the current user follows
+          matchesTab = following.includes(listing?.sellerId) || following.includes(listing?.userId)
           break
         default:
           matchesTab = true
@@ -337,7 +422,7 @@ import { useAuth } from '../contexts/AuthContext'
       
       return matchesTab && matchesSearch
       })
-    }, [listings, user, countdownTimers, activeTab, searchQuery])
+    }, [listings, user, countdownTimers, activeTab, searchQuery, following])
 
     // Helper functions
     const isOwnListing = (listing) => {
@@ -399,9 +484,24 @@ import { useAuth } from '../contexts/AuthContext'
       return listing?.priceType === 'msl' ? 'M-S-L' : 'Bidding'
     }
 
-    const onRefresh = () => {
+    const onRefresh = async () => {
       setRefreshing(true)
-      // The useEffect will handle the refresh
+      try {
+        // Refresh favorites, following, and unread count
+        await Promise.all([fetchFavorites(), fetchFollowing(), fetchUnreadCount()])
+      } catch (error) {
+        console.error('Error refreshing data:', error)
+      } finally {
+        setRefreshing(false)
+      }
+    }
+
+    const handleChatPress = () => {
+      if (navigation) {
+        // Reset unread count when opening messages
+        setUnreadCount(0);
+        navigation.navigate('messages')
+      }
     }
 
     return (
@@ -444,8 +544,15 @@ import { useAuth } from '../contexts/AuthContext'
             >
               <Ionicons name="heart-outline" size={24} color="#83AFA7" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton}>
+            <TouchableOpacity style={styles.iconButton} onPress={handleChatPress}>
               <Ionicons name="chatbubble-outline" size={24} color="#83AFA7" />
+              {unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -481,12 +588,6 @@ import { useAuth } from '../contexts/AuthContext'
           >
             <Text style={[styles.tabText, activeTab === 'following' && styles.activeTabText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Following</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'locale' && styles.activeTab]}
-            onPress={() => setActiveTab('locale')}
-          >
-            <Text style={[styles.tabText, activeTab === 'locale' && styles.activeTabText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>Locale</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* Product Grid */}
@@ -514,10 +615,14 @@ import { useAuth } from '../contexts/AuthContext'
             <View style={styles.emptyContainer}>
               <Ionicons name="storefront-outline" size={64} color="#83AFA7" />
               <Text style={[styles.emptyText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
-                {searchQuery ? 'No listings found for your search' : 'No listings available'}
+                {searchQuery ? 'No listings found for your search' : 
+                 activeTab === 'following' ? 'No listings from people you follow' :
+                 'No listings available'}
               </Text>
               <Text style={[styles.emptySubtext, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
-                {searchQuery ? 'Try adjusting your search terms' : 'Be the first to post a listing!'}
+                {searchQuery ? 'Try adjusting your search terms' : 
+                 activeTab === 'following' ? 'Follow some users to see their listings here!' :
+                 'Be the first to post a listing!'}
               </Text>
             </View>
           ) : (
@@ -604,9 +709,6 @@ import { useAuth } from '../contexts/AuthContext'
                           </View>
                         )}
                       </View>
-                    <TouchableOpacity style={styles.moreButton}>
-                      <Ionicons name="ellipsis-vertical" size={16} color="#83AFA7" />
-                    </TouchableOpacity>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -683,11 +785,13 @@ import { useAuth } from '../contexts/AuthContext'
     tabScrollContainer: {
       backgroundColor: "#DFECE2",
       maxHeight: 50,
+      marginTop: -10,
     },
     tabContainer: {
       flexDirection: "row",
       paddingHorizontal: 16,
       paddingVertical: 8,
+      paddingBottom: 5,
       alignItems: "center",
     },
     tab: {
@@ -880,9 +984,6 @@ import { useAuth } from '../contexts/AuthContext'
       color: "#666",
       fontFamily: "Poppins-Regular",
     },
-    moreButton: {
-      padding: 4,
-    },
     loadingContainer: {
       flex: 1,
       justifyContent: 'center',
@@ -925,6 +1026,24 @@ import { useAuth } from '../contexts/AuthContext'
     userAvatarText: {
       fontSize: 10,
       color: 'white',
+    },
+    badge: {
+      position: 'absolute',
+      top: -5,
+      right: -5,
+      backgroundColor: '#FF4444',
+      borderRadius: 10,
+      minWidth: 20,
+      height: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 6,
+    },
+    badgeText: {
+      color: 'white',
+      fontSize: 12,
+      fontWeight: 'bold',
+      fontFamily: 'Poppins-SemiBold',
     },
   })
   

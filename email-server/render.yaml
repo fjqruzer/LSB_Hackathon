@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: copit-email-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: BREVO_API_KEY
+        sync: false

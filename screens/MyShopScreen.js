@@ -254,7 +254,9 @@ const MyShopScreen = ({ navigation }) => {
       <TouchableOpacity
         key={listing.id}
         style={styles.listingCard}
-        onPress={() => navigation.navigate('ListingDetails', { listing: listing })}
+        onPress={() => navigation.navigate('ListingDetails', { 
+          listing: { ...listing, fromShop: true } 
+        })}
       >
         <Image 
           source={{ 
@@ -299,7 +301,9 @@ const MyShopScreen = ({ navigation }) => {
           <View style={styles.listingActions}>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => navigation.navigate('ListingDetails', { listing: listing })}
+              onPress={() => navigation.navigate('ListingDetails', { 
+                listing: { ...listing, fromShop: true } 
+              })}
             >
               <Ionicons name="eye-outline" size={16} color="#83AFA7" />
               <Text style={styles.actionText}>View</Text>
@@ -351,7 +355,7 @@ const MyShopScreen = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color={colors.accent} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { fontFamily: fontsLoaded ? "Poppins-Bold" : undefined, color: colors.accent }]}>
+        <Text style={[styles.headerTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined, color: colors.accent }]}>
           My Shop
         </Text>
         <TouchableOpacity onPress={checkPaymentMethodsAndNavigate}>
@@ -391,21 +395,28 @@ const MyShopScreen = ({ navigation }) => {
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
-        {['all', 'active', 'expired', 'sold'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.activeTab]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[
-              styles.tabText,
-              { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined },
-              activeTab === tab && styles.activeTabText
-            ]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
+          {[
+            { key: 'all', label: 'All', count: listings.length },
+            { key: 'active', label: 'Active', count: listings.filter(l => l.status === 'active').length },
+            { key: 'expired', label: 'Expired', count: listings.filter(l => l.status === 'expired').length },
+            { key: 'sold', label: 'Sold', count: listings.filter(l => l.status === 'sold').length }
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[
+                styles.tabText,
+                { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined },
+                activeTab === tab.key && styles.activeTabText
+              ]}>
+                {tab.label} ({tab.count})
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Listings */}
@@ -430,8 +441,8 @@ const MyShopScreen = ({ navigation }) => {
           </View>
         ) : filteredListings.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="storefront-outline" size={64} color="#CCC" />
-            <Text style={[styles.emptyTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+            <Ionicons name="storefront-outline" size={64} color="#83AFA7" />
+            <Text style={[styles.emptyTitle, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
               No listings found
             </Text>
             <Text style={[styles.emptySubtitle, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
@@ -483,7 +494,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   headerTitle: {
-    fontSize: Platform.OS === 'android' ? 16 : 18,
+    fontSize: 18,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -513,30 +524,25 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: Platform.OS === 'android' ? 16 : 20,
-    marginBottom: Platform.OS === 'android' ? 12 : 16,
+    backgroundColor: '#DFECE2',
+    paddingBottom: 16,
+  },
+  tabScroll: {
+    paddingHorizontal: 20,
   },
   tab: {
-    flex: 1,
-    paddingVertical: Platform.OS === 'android' ? 10 : 12,
-    paddingHorizontal: Platform.OS === 'android' ? 12 : 16,
-    marginHorizontal: Platform.OS === 'android' ? 2 : 4,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(131, 175, 167, 0.1)',
   },
   activeTab: {
     backgroundColor: '#83AFA7',
   },
   tabText: {
-    fontSize: Platform.OS === 'android' ? 12 : 14,
-    color: '#666',
+    fontSize: 12,
+    color: '#83AFA7',
   },
   activeTabText: {
     color: 'white',
@@ -561,10 +567,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
+    paddingHorizontal: 40,
   },
   emptyTitle: {
     fontSize: 18,
-    color: '#333',
+    color: '#83AFA7',
+    textAlign: 'center',
     marginTop: 16,
     marginBottom: 8,
   },
@@ -572,7 +580,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
-    marginBottom: 24,
   },
   createButton: {
     flexDirection: 'row',

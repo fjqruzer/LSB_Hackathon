@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, StatusBar, Platform, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import { useNavigation } from '@react-navigation/native';
 import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import { useTheme } from '../contexts/ThemeContext';
 
-const UpdatesScreen = () => {
-  const navigation = useNavigation();
+const UpdatesScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { notifications, unreadCount, markAsRead, clearAllNotifications } = useNotificationListener();
+  const { notifications, unreadCount, markAsRead } = useNotificationListener();
   const { isDarkMode, colors } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  const isMountedRef = useRef(true);
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -21,6 +20,13 @@ const UpdatesScreen = () => {
     'Poppins-SemiBold': require('../assets/fonts/Poppins-SemiBold.ttf'),
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
   });
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Don't render until fonts are loaded
   if (!fontsLoaded) {
@@ -102,34 +108,69 @@ const UpdatesScreen = () => {
   };
 
   // Handle notification press
-  const handleNotificationPress = (notification) => {
-    // Mark as read
-    markAsRead(notification.id);
+  const handleNotificationPress = (update) => {
+    // Mark as read using the original notification ID
+    markAsRead(update.notificationId);
     
+    // Check if component is still mounted
+    if (!isMountedRef.current) {
+      return;
+    }
+    
+    // Check if navigation is available
+    if (!navigation || !navigation.navigate) {
+      console.warn('Navigation not available');
+      return;
+    }
     
     // Handle different notification types
-    if (notification.data?.type === 'payment_required' || notification.data?.type === 'payment_reminder') {
-      
-      // Navigate to payment screen
-      navigation.navigate('Payment', {
-        listingId: notification.data.listingId,
-        actionType: notification.data.actionType,
-        price: notification.data.amount,
-      });
-    } else if (notification.data?.listingId) {
-      // Navigate to listing details
+    try {
+      if (update.type === 'payment_required' || update.type === 'payment_reminder') {
+        // Debug logging
+        console.log('🔍 UpdatesScreen - Navigating to Payment with data:', {
+          listingId: update.listingId,
+          actionType: update.action,
+          amount: update.amount,
+          paymentId: update.paymentId
+        });
+        
+        // Navigate to payment screen
+        navigation.navigate('Payment', {
+          listingId: update.listingId,
+          actionType: update.action,
+          price: update.amount,
+          amount: update.amount,
+          paymentId: update.paymentId, // Pass paymentId if available
+        });
+      } else if (update.type === 'payment_approved' || update.type === 'payment_rejected') {
+        // Navigate to MyPayments screen for payment status
+        navigation.navigate('MyPayments');
+      } else if (update.type === 'payment_submitted') {
+        // Navigate to PaymentApproval screen for seller
+        navigation.navigate('PaymentApproval');
+      } else if (update.listingId) {
+        // Navigate to listing details
+        navigation.navigate('ListingDetails', {
+          listing: { id: update.listingId }
+        });
       }
+    } catch (error) {
+      console.error('Navigation error:', error);
+    }
   };
 
   // Use real notifications from context
   const updates = notifications.map(notification => ({
     id: notification.id,
+    notificationId: notification.id, // Keep reference to original notification ID
     type: notification.data?.type || notification.type || 'general',
     title: notification.title,
     description: notification.body,
     time: formatTimeAgo(notification.createdAt),
     action: notification.data?.action,
     listingId: notification.data?.listingId,
+    amount: notification.data?.amount, // Add amount field for price display
+    paymentId: notification.data?.paymentId, // Add paymentId for existing payments
     unread: !notification.read,
   }));
 
@@ -178,14 +219,6 @@ const UpdatesScreen = () => {
               <Text style={styles.badgeText}>{unreadCount}</Text>
             </View>
           )}
-          {notifications.length > 0 && (
-            <TouchableOpacity 
-              style={styles.clearButton}
-              onPress={clearAllNotifications}
-            >
-              <Ionicons name="trash-outline" size={20} color={colors.accent} />
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -203,39 +236,21 @@ const UpdatesScreen = () => {
           />
         }
       >
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.actionButton}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="notifications-off-outline" size={24} color="#83AFA7" />
-              </View>
-              <Text style={styles.actionText}>Mute All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="checkmark-done-outline" size={24} color="#83AFA7" />
-              </View>
-              <Text style={styles.actionText}>Mark Read</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <View style={styles.actionIcon}>
-                <Ionicons name="settings-outline" size={24} color="#83AFA7" />
-              </View>
-              <Text style={styles.actionText}>Settings</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* Updates List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Updates</Text>
           {updates.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="notifications-outline" size={48} color="#CCC" />
-              <Text style={styles.emptyTitle}>No notifications yet</Text>
-              <Text style={styles.emptyDescription}>You'll see updates about your listings and activity here</Text>
+              <Ionicons name="notifications-outline" size={64} color="#83AFA7" />
+              <Text style={[
+                styles.emptyTitle,
+                { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }
+              ]}>No notifications yet</Text>
+              <Text style={[
+                styles.emptyDescription,
+                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }
+              ]}>You'll see updates about your listings and activity here</Text>
             </View>
           ) : (
             updates.map((update) => (
@@ -264,9 +279,6 @@ const UpdatesScreen = () => {
                 <Text style={styles.updateDescription}>{update.description}</Text>
                 <Text style={styles.updateTime}>{update.time}</Text>
               </View>
-              <TouchableOpacity style={styles.updateAction}>
-                <Ionicons name="chevron-forward" size={20} color="#CCC" />
-              </TouchableOpacity>
             </TouchableOpacity>
             ))
           )}
@@ -313,36 +325,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontFamily: 'Poppins-SemiBold',
-    color: '#333',
+    color: '#83AFA7',
     marginBottom: 12,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  actionButton: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  actionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'white',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 6,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
-  },
-  actionText: {
-    fontSize: 10,
-    fontFamily: 'Poppins-Medium',
-    color: '#333',
-    textAlign: 'center',
   },
   updateCard: {
     flexDirection: 'row',
@@ -407,9 +391,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Regular',
     color: '#999',
   },
-  updateAction: {
-    padding: 6,
-  },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -428,26 +409,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Poppins-Bold',
   },
-  clearButton: {
-    padding: 8,
-  },
   emptyState: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+    paddingHorizontal: 40,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontFamily: 'Poppins-SemiBold',
-    color: '#666',
-    marginTop: 12,
-    marginBottom: 4,
+    fontSize: 18,
+    color: '#83AFA7',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyDescription: {
     fontSize: 14,
-    fontFamily: 'Poppins-Regular',
-    color: '#999',
+    color: '#666',
     textAlign: 'center',
-    paddingHorizontal: 20,
   },
 });
 

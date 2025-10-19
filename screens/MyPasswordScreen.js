@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   headerTitle: {
-    fontSize: Platform.OS === 'android' ? 16 : 18,
+    fontSize: 18,
   },
   headerSpacer: {
     width: 32,

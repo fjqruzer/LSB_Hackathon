@@ -245,7 +245,7 @@ const PaymentMethodsScreen = ({ navigation }) => {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color={colors.accent} />
+          <Ionicons name="arrow-back" size={24} color={colors.accent} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined, color: colors.accent }]}>
           Payment Methods
@@ -274,8 +274,8 @@ const PaymentMethodsScreen = ({ navigation }) => {
           
           {paymentMethods.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="card-outline" size={48} color="#CCC" />
-              <Text style={[styles.emptyTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+              <Ionicons name="card-outline" size={64} color="#83AFA7" />
+              <Text style={[styles.emptyTitle, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
                 No Payment Methods
               </Text>
               <Text style={[styles.emptyDescription, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
@@ -648,18 +648,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   emptyState: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+    paddingHorizontal: 40,
   },
   emptyTitle: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
-    marginBottom: 4,
+    fontSize: 18,
+    color: '#83AFA7',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyDescription: {
     fontSize: 14,
-    color: '#999',
+    color: '#666',
     textAlign: 'center',
   },
   paymentMethodCard: {

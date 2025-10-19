@@ -4,6 +4,7 @@ import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
 import NotificationService from '../services/NotificationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 
 const NotificationListenerContext = createContext();
 
@@ -58,7 +59,6 @@ export const NotificationListenerProvider = ({ children }) => {
     const contentKey = `${title}|${body}|${JSON.stringify(data)}|${createdAt.getTime()}`;
     return contentKey;
   };
-
 
   useEffect(() => {
     if (!user) {
@@ -147,7 +147,6 @@ export const NotificationListenerProvider = ({ children }) => {
 
         // Process only truly new notifications
         if (trulyNewNotifications.length > 0) {
-          console.log(`📱 Processing ${trulyNewNotifications.length} new notifications`);
           
           // Add new notification IDs to processed set
           const newProcessedIds = new Set(currentProcessedIds);
@@ -170,16 +169,23 @@ export const NotificationListenerProvider = ({ children }) => {
           
           // Show local notification for each new notification
           trulyNewNotifications.forEach(notification => {
-            console.log(`📱 Showing notification: ${notification.title}`);
-            // Show local notification with screen field for click handling
-            NotificationService.sendLocalNotification(
-              notification.title,
-              notification.body,
-              {
-                ...notification.data,
-                screen: notification.data.screen || 'marketplace' // Default screen
-              }
-            );
+            // Only show local notification if app is in foreground
+            // This prevents double notifications (in-app + local)
+            const appState = AppState.currentState;
+            if (appState === 'active') {
+              console.log('📱 App is in foreground, showing local notification');
+              // Show local notification with screen field for click handling
+              NotificationService.sendLocalNotification(
+                notification.title,
+                notification.body,
+                {
+                  ...notification.data,
+                  screen: notification.data.screen || 'marketplace' // Default screen
+                }
+              );
+            } else {
+              console.log('📱 App is in background, skipping local notification (push notification will show)');
+            }
             
             // Note: Navigation is handled by notification click, not immediately
             // The notification click will be handled by the App-level listener

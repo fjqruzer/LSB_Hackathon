@@ -9,10 +9,12 @@ import {
   TextInput,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useFonts } from 'expo-font';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
+import OTPService from '../services/OTPService';
 
   const { width, height } = Dimensions.get('window');
 
@@ -286,31 +288,50 @@ const SignupScreen = ({ navigation }) => {
       }
       
       if (Object.keys(newErrors).length === 0) {
-        // Handle final submission with Firebase
+        // Send OTP for verification instead of direct signup
         setLoading(true);
         try {
-          const displayName = `${firstName} ${lastName}`.trim();
-          const userData = {
-            username: username.trim(),
-            firstName: firstName.trim(),
-            middleName: middleName.trim(),
-            lastName: lastName.trim()
-          };
+          const result = await OTPService.sendOTP(email.trim(), 'signup');
           
-          await signup(email.trim(), password, displayName, userData);
-          // Success - navigation to main app happens automatically via AuthContext
-        } catch (error) {
-          let errorMessage = 'An error occurred during signup';
-          
-          if (error.code === 'auth/email-already-in-use') {
-            setErrors({ email: 'An account with this email already exists' });
-          } else if (error.code === 'auth/invalid-email') {
-            setErrors({ email: 'Please enter a valid email address' });
-          } else if (error.code === 'auth/weak-password') {
-            setErrors({ password: 'Password is too weak. Please choose a stronger password' });
+          if (result.success) {
+            // Navigate to OTP verification screen
+            navigation.navigate('OTPVerification', {
+              email: email.trim(),
+              type: 'signup',
+              onVerificationSuccess: async () => {
+                // After OTP verification, proceed with signup
+                try {
+                  const displayName = `${firstName} ${lastName}`.trim();
+                  const userData = {
+                    username: username.trim(),
+                    firstName: firstName.trim(),
+                    middleName: middleName.trim(),
+                    lastName: lastName.trim()
+                  };
+                  
+                  await signup(email.trim(), password, displayName, userData);
+                  // Success - navigation to main app happens automatically via AuthContext
+                } catch (error) {
+                  let errorMessage = 'An error occurred during signup';
+                  
+                  if (error.code === 'auth/email-already-in-use') {
+                    Alert.alert('Error', 'An account with this email already exists');
+                  } else if (error.code === 'auth/invalid-email') {
+                    Alert.alert('Error', 'Please enter a valid email address');
+                  } else if (error.code === 'auth/weak-password') {
+                    Alert.alert('Error', 'Password is too weak. Please choose a stronger password');
+                  } else {
+                    Alert.alert('Error', errorMessage);
+                  }
+                }
+              }
+            });
           } else {
-            setErrors({ general: errorMessage });
+            Alert.alert('Error', result.message);
           }
+        } catch (error) {
+          console.error('OTP send error:', error);
+          Alert.alert('Error', 'Failed to send verification code. Please try again.');
         } finally {
           setLoading(false);
         }
@@ -320,9 +341,6 @@ const SignupScreen = ({ navigation }) => {
     }
   };
 
-  const handleSignUpLater = () => {
-    // Handle sign up later logic here
-  };
 
   return (
       <SafeAreaView style={styles.container}>
@@ -541,13 +559,6 @@ const SignupScreen = ({ navigation }) => {
             </TouchableOpacity>
         </View>
         
-        {/* Sign Up Later */}
-          <TouchableOpacity 
-            style={styles.signUpLaterButton}
-            onPress={handleSignUpLater}
-          >
-          <Text style={styles.signUpLaterText}>Sign Up Later</Text>
-        </TouchableOpacity>
       </View>
 
       </SafeAreaView>
@@ -659,15 +670,6 @@ const styles = StyleSheet.create({
     linkText: {
     color: COLORS.orange,
     fontFamily: 'Poppins-SemiBold',
-  },
-  signUpLaterButton: {
-      marginBottom: 30,
-  },
-  signUpLaterText: {
-    fontSize: 14,
-    fontFamily: 'Poppins-Regular',
-    color: COLORS.teal,
-      textAlign: 'center',
   },
     signInSection: {
       flexDirection: 'row',

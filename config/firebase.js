@@ -5,12 +5,13 @@ import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB4FFOzyf2km_d0rfn3LeknJzHIwCL3Ujw",
-  authDomain: "copit-090603.firebaseapp.com",
-  projectId: "copit-090603",
-  storageBucket: "copit-090603.firebasestorage.app",
-  messagingSenderId: "188423320531",
-  appId: "1:188423320531:web:6f988f7b47634ce7b5f526"
+  apiKey: "AIzaSyCOfzExqkWGCaWK0UyL8y7G1h7SfyFm560",
+  authDomain: "copit-ce43f.firebaseapp.com",
+  projectId: "copit-ce43f",
+  storageBucket: "copit-ce43f.firebasestorage.app",
+  messagingSenderId: "357039645731",
+  appId: "1:357039645731:web:460a02d30811bd83437d96",
+  measurementId: "G-MQT39KJPG1"
 };
 
 // Initialize Firebase
@@ -22,15 +23,30 @@ if (getApps().length === 0) {
 }
 
 // Initialize Firebase Authentication with persistence
-const auth = initializeAuth(app, {
+let auth;
+try {
+  // Always initialize with persistence to ensure login state is preserved
+  auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage)
   });
+  console.log('✅ Firebase Auth initialized with persistence');
+} catch (error) {
+  console.log('Auth already initialized, getting existing instance...');
+  if (error.code === 'auth/already-initialized') {
+    // If already initialized, get the existing instance
+    auth = getAuth(app);
+    console.log('✅ Firebase Auth retrieved (already initialized)');
+  } else {
+    console.error('❌ Error initializing Firebase Auth:', error);
+    throw error;
+  }
+}
 
 // Initialize Firestore
 const db = getFirestore(app);
 
 // Initialize Firebase Storage
-const storage = getStorage(app, 'gs://copit-090603.firebasestorage.app');
+const storage = getStorage(app, 'gs://copit-ce43f.firebasestorage.app');
 
 export { auth, db, storage };
 export default app;

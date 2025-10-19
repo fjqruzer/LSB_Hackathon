@@ -5,7 +5,7 @@ A React Native/Expo app with Firebase authentication for competitive thrift shop
 ## Features
 
 - **Onboarding Flow**: Multi-step introduction to the app
-- **User Authentication**: Signup and login with Firebase
+- **User Authentication**: Signup and login with Firebase   
 - **Multi-step Signup**: Email, names, and password sections
 - **Responsive Design**: Optimized for different screen sizes
 - **Modern UI**: Clean, minimalist design with custom fonts

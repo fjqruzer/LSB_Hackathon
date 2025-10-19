@@ -5,11 +5,14 @@ import {
   signOut, 
   onAuthStateChanged,
   updateProfile,
-  deleteUser
+  deleteUser,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import NotificationService from '../services/NotificationService';
+import EmailService from '../services/EmailService';
+import PresenceService from '../services/PresenceService';
 
 const AuthContext = createContext({});
 
@@ -22,12 +25,44 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
+    let unsubscribe;
+    
+    // Add a small delay to ensure Firebase is fully initialized
+    const initializeAuth = async () => {
+      try {
+        // Wait a bit to ensure Firebase is ready
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        unsubscribe = onAuthStateChanged(auth, async (user) => {
+          console.log('🔐 Auth state changed:', user ? `User logged in: ${user.email}` : 'User logged out');
+          console.log('🔐 User object:', user ? { uid: user.uid, email: user.email, displayName: user.displayName } : 'null');
+          
+          if (user) {
+            // User logged in - initialize presence tracking
+            await PresenceService.initializePresence(user.uid);
+          } else {
+            // User logged out - cleanup presence tracking
+            await PresenceService.cleanup();
+          }
+          
+          setUser(user);
+          setLoading(false);
+        });
+      } catch (error) {
+        console.error('❌ Error setting up auth state listener:', error);
+        setLoading(false);
+      }
+    };
 
-    return unsubscribe;
+    initializeAuth();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      // Cleanup presence tracking when AuthProvider unmounts
+      PresenceService.cleanup();
+    };
   }, []);
 
   const signup = async (email, password, displayName, userData) => {
@@ -63,6 +98,16 @@ export const AuthProvider = ({ children }) => {
         }
       }
       
+      // Send welcome email (don't wait for it to complete)
+      try {
+        const firstName = userData?.firstName || displayName?.split(' ')[0] || 'there';
+        EmailService.sendWelcomeEmail(email, firstName).catch(error => {
+          console.error('Welcome email error (non-blocking):', error);
+        });
+      } catch (error) {
+        console.error('Welcome email error (non-blocking):', error);
+      }
+      
       return userCredential.user;
     } catch (error) {
       console.error('Signup error:', error);
@@ -87,6 +132,16 @@ export const AuthProvider = ({ children }) => {
     try {
       await signOut(auth);
     } catch (error) {
+      throw error;
+    }
+  };
+
+  const forgotPassword = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return true;
+    } catch (error) {
+      console.error('Forgot password error:', error);
       throw error;
     }
   };
@@ -218,11 +273,24 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update presence status manually
+  const updatePresenceStatus = async (isOnline) => {
+    if (user) {
+      await PresenceService.updatePresence(user.uid, isOnline);
+    }
+  };
+
+  // Get current presence status
+  const getPresenceStatus = () => {
+    return PresenceService.getPresenceStatus();
+  };
+
   const value = {
     user,
     signup,
     login,
     logout,
+    forgotPassword,
     deleteUserAccount,
     getUserProfile,
     testFirestore,
@@ -231,12 +299,14 @@ export const AuthProvider = ({ children }) => {
     updateUserPushToken,
     forceUpdatePushToken,
     getUserPushToken,
+    updatePresenceStatus,
+    getPresenceStatus,
     loading
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

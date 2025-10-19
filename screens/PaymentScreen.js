@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,22 +11,27 @@ import {
   Alert,
   TextInput,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToCloudinary } from '../config/cloudinary';
 import PaymentTimeoutService from '../services/PaymentTimeoutService';
+import NotificationManager from '../services/NotificationManager';
 import StandardModal from '../components/StandardModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ChatService from '../services/ChatService';
+const PSGCService = require('../services/PSGCService');
 
 const PaymentScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { listingId, actionType, price, amount, paymentId, existingPaymentData } = route?.params || {};
+  const { listingId, actionType, price, amount, paymentId, existingPaymentData, isExpired } = route?.params || {};
   const actualPrice = price || amount;
   
   // Core state
@@ -36,6 +41,7 @@ const PaymentScreen = ({ navigation, route }) => {
   
   // Payment form state
   const [paymentProof, setPaymentProof] = useState(null);
+  const [paymentProofSet, setPaymentProofSet] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [referenceNumber, setReferenceNumber] = useState('');
   const [notes, setNotes] = useState('');
@@ -44,14 +50,34 @@ const PaymentScreen = ({ navigation, route }) => {
   const [showPaymentExpiredModal, setShowPaymentExpiredModal] = useState(false);
   const [displayPrice, setDisplayPrice] = useState(actualPrice);
   
+  // Address state
+  const [userAddresses, setUserAddresses] = useState([]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+  
   // Timer state
-  const [timeRemaining, setTimeRemaining] = useState(180);
-  const [timerActive, setTimerActive] = useState(true);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [timerActive, setTimerActive] = useState(false);
   const [existingPayment, setExistingPayment] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState('pending_payment');
   
   // UI state
   const [stateLoaded, setStateLoaded] = useState(false);
   const [paymentRecordLoaded, setPaymentRecordLoaded] = useState(false);
+  const [showZoomModal, setShowZoomModal] = useState(false);
+  const [zoomImageUrl, setZoomImageUrl] = useState('');
+  
+  // Ref to track initialization to prevent multiple calls
+  const initializationRef = useRef(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+
+  // Helper function to format price with decimal places
+  const formatPrice = (price) => {
+    if (!price) return '0.00';
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    return numPrice.toFixed(2);
+  };
 
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -61,17 +87,155 @@ const PaymentScreen = ({ navigation, route }) => {
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
   });
 
+  // Storage key for payment proof
+  const getStorageKey = () => `payment_proof_${listingId}_${actionType}`;
+
+  // Save payment proof to AsyncStorage
+  const savePaymentProof = async (imageData) => {
+    try {
+      const storageKey = getStorageKey();
+      await AsyncStorage.setItem(storageKey, JSON.stringify(imageData));
+      console.log('💾 Payment proof saved to storage');
+    } catch (error) {
+      console.error('❌ Error saving payment proof:', error);
+    }
+  };
+
+  // Load payment proof from AsyncStorage
+  const loadPaymentProof = async () => {
+    try {
+      const storageKey = getStorageKey();
+      const savedData = await AsyncStorage.getItem(storageKey);
+      
+      if (savedData) {
+        const imageData = JSON.parse(savedData);
+        setPaymentProof(imageData);
+        setPaymentProofSet(true);
+        console.log('📱 Payment proof loaded from storage');
+      }
+    } catch (error) {
+      console.error('❌ Error loading payment proof:', error);
+    }
+  };
+
+  // Load user addresses and set default
+  const loadUserAddresses = async () => {
+    try {
+      setLoadingAddresses(true);
+      console.log('🏠 Loading user addresses...');
+      
+      const addressesQuery = query(
+        collection(db, 'addresses'),
+        where('userId', '==', user.uid)
+      );
+      const addressesSnapshot = await getDocs(addressesQuery);
+      
+      const addresses = [];
+      let defaultAddress = null;
+      
+      addressesSnapshot.docs.forEach((doc) => {
+        const addressData = { id: doc.id, ...doc.data() };
+        addresses.push(addressData);
+        
+        // Set default address
+        if (addressData.isDefault) {
+          defaultAddress = addressData;
+        }
+      });
+      
+      setUserAddresses(addresses);
+      
+      // Set default address or first address
+      if (defaultAddress) {
+        setSelectedAddress(defaultAddress);
+        console.log('🏠 Default address set:', defaultAddress.name);
+      } else if (addresses.length > 0) {
+        setSelectedAddress(addresses[0]);
+        console.log('🏠 First address set as default:', addresses[0].name);
+      } else {
+        console.log('🏠 No addresses found for user');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error loading user addresses:', error);
+    } finally {
+      setLoadingAddresses(false);
+    }
+  };
+
+  // Clear payment proof from AsyncStorage
+  const clearPaymentProof = async () => {
+    try {
+      const storageKey = getStorageKey();
+      await AsyncStorage.removeItem(storageKey);
+      console.log('🗑️ Payment proof cleared from storage');
+    } catch (error) {
+      console.error('❌ Error clearing payment proof:', error);
+    }
+  };
+
+  // Test function to verify listing data fetch
+  const testListingFetch = async (testListingId) => {
+    try {
+      console.log('🧪 TESTING LISTING FETCH FOR ID:', testListingId);
+      const listingRef = doc(db, 'listings', testListingId);
+      const listingDoc = await getDoc(listingRef);
+      
+      if (!listingDoc.exists()) {
+        console.log('❌ Listing not found');
+        return;
+      }
+      
+      const listingData = { id: listingDoc.id, ...listingDoc.data() };
+      console.log('✅ TEST LISTING DATA:', {
+        id: listingData.id,
+        title: listingData.title,
+        sellerId: listingData.sellerId,
+        allFields: Object.keys(listingData)
+      });
+      
+      return listingData;
+    } catch (error) {
+      console.error('❌ TEST ERROR:', error);
+    }
+  };
+
+  // Check if payment form should be disabled
+  const isPaymentFormDisabled = () => {
+    return paymentStatus !== 'pending_payment';
+  };
+
   // Create payment record for Lock action
   const createPaymentRecordForLockAction = useCallback(async () => {
     try {
       
       const expirationTime = new Date(Date.now() + (3 * 60 * 1000));
       
+      // Get listing data to ensure we have sellerId
+      const listingRef = doc(db, 'listings', listingId);
+      const listingDoc = await getDoc(listingRef);
+      if (!listingDoc.exists()) {
+        throw new Error('Listing not found');
+      }
+      const listingData = { id: listingDoc.id, ...listingDoc.data() };
+      
+      console.log('🔍 DEBUGGING LOCK LISTING DATA:');
+      console.log('📋 Listing ID:', listingId);
+      console.log('📋 Raw listing data:', listingDoc.data());
+      console.log('📋 Processed listing data:', listingData);
+      console.log('📋 Title field value:', listingData.title);
+      console.log('📋 All listing fields:', Object.keys(listingData));
+      console.log('📋 Title type:', typeof listingData.title);
+      console.log('📋 Title length:', listingData.title ? listingData.title.length : 'undefined');
+      console.log('📋 Final listingTitle to be stored:', listingData.title || 'Unknown Item');
+
       const paymentData = {
         listingId: listingId,
         buyerId: user.uid,
         buyerName: user.displayName || user.email,
-        sellerId: listing?.sellerId || '',
+        sellerId: listingData.sellerId || listingData.userId || '',
+        listingTitle: listingData.title || 'Unknown Item',
+        listingImage: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
         actionType: actionType,
         amount: displayPrice,
         status: 'pending_payment',
@@ -79,6 +243,21 @@ const PaymentScreen = ({ navigation, route }) => {
         createdAt: serverTimestamp(),
         lastUpdated: serverTimestamp(),
       };
+
+      console.log('💳 Creating Lock payment with data:', {
+        listingId,
+        buyerId: user.uid,
+        sellerId: listingData.sellerId || listingData.userId || '',
+        listingData: {
+          sellerId: listingData.sellerId,
+          userId: listingData.userId,
+          sellerName: listingData.sellerName,
+          title: listingData.title,
+          name: listingData.name,
+          itemName: listingData.itemName,
+          allFields: Object.keys(listingData)
+        }
+      });
       
       const paymentRef = await addDoc(collection(db, 'payments'), paymentData);
       
@@ -88,12 +267,19 @@ const PaymentScreen = ({ navigation, route }) => {
       const timeLeft = Math.max(0, Math.floor((expirationTime - now) / 1000));
       setTimeRemaining(timeLeft);
       
+      // Activate timer if there's time remaining
+      if (timeLeft > 0) {
+        setTimerActive(true);
+      } else {
+        setTimerActive(false);
+      }
+      
       return paymentRef.id;
     } catch (error) {
       console.error('❌ Error creating payment record for Lock action:', error);
       throw error;
     }
-  }, [user.uid, listingId, listing?.sellerId, actionType, displayPrice]);
+  }, [user.uid, listingId, actionType]);
 
   // Load existing payment record
   const loadExistingPayment = useCallback(async () => {
@@ -111,6 +297,7 @@ const PaymentScreen = ({ navigation, route }) => {
         const paymentDoc = paymentsSnapshot.docs[0];
         const paymentData = { id: paymentDoc.id, ...paymentDoc.data() };
         setExistingPayment(paymentData);
+        setPaymentStatus(paymentData.status || 'pending_payment');
         
         if (paymentData.expirationTime) {
           const expirationTime = paymentData.expirationTime.toDate ? 
@@ -122,13 +309,22 @@ const PaymentScreen = ({ navigation, route }) => {
           
           setTimeRemaining(timeLeft);
           
+          // Activate timer if there's time remaining and payment is pending
+          if (timeLeft > 0 && paymentData.status === 'pending_payment') {
+            setTimerActive(true);
+          } else {
+            setTimerActive(false);
+          }
+          
           if (timeLeft <= 0) {
             setTimerActive(false);
-            Alert.alert(
-              'Payment Expired',
-              'This payment opportunity has expired.',
-              [{ text: 'OK', onPress: () => navigation.goBack() }]
-            );
+            if (!isExpired && paymentData.status !== 'cancelled' && paymentData.status !== 'sold') {
+              Alert.alert(
+                'Payment Expired',
+                'This payment opportunity has expired.',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
+            }
           }
         }
         
@@ -140,11 +336,14 @@ const PaymentScreen = ({ navigation, route }) => {
       console.error('❌ Error loading existing payment:', error);
       return false;
     }
-  }, [listingId, user.uid, navigation]);
+  }, [listingId, user.uid]);
 
-  // Initialize payment data
+  // Initialize payment data - stable function without dependencies
   const initializePaymentData = useCallback(async () => {
     try {
+      
+      // Test the listing fetch to verify data structure
+      await testListingFetch(listingId);
       
       // Load listing
       const listingRef = doc(db, 'listings', listingId);
@@ -153,7 +352,29 @@ const PaymentScreen = ({ navigation, route }) => {
         const listingData = { id: listingDoc.id, ...listingDoc.data() };
         setListing(listingData);
         
-        const finalPrice = actualPrice || listingData.price || 0;
+        // Use actualPrice from notification if available, otherwise calculate from listing data
+        let finalPrice = actualPrice;
+        if (!finalPrice) {
+          // Extract numeric value from ChatService.getDisplayPrice result
+          const chatServicePrice = ChatService.getDisplayPrice(listingData);
+          finalPrice = parseFloat(chatServicePrice.replace('₱', '')) || 0;
+        }
+        
+        console.log('🔍 PaymentScreen - Price calculation:', {
+          actualPrice,
+          chatServicePrice: ChatService.getDisplayPrice(listingData),
+          finalPrice,
+          listingData: {
+            priceType: listingData.priceType,
+            minePrice: listingData.minePrice,
+            stealPrice: listingData.stealPrice,
+            lockPrice: listingData.lockPrice,
+            currentBid: listingData.currentBid,
+            startingPrice: listingData.startingPrice,
+            price: listingData.price
+          }
+        });
+        
         setDisplayPrice(finalPrice);
         
         // Load seller payment methods
@@ -181,8 +402,15 @@ const PaymentScreen = ({ navigation, route }) => {
         if (existingPaymentData.notes) {
           setNotes(existingPaymentData.notes);
         }
-        if (existingPaymentData.paymentProofUrl) {
-          setPaymentProof({ uri: existingPaymentData.paymentProofUrl });
+        // Only load from existing payment data if no saved proof in AsyncStorage
+        if (existingPaymentData.paymentProofUrl && !paymentProofSet) {
+          // Check if we have a saved proof first
+          const storageKey = getStorageKey();
+          const savedData = await AsyncStorage.getItem(storageKey);
+          if (!savedData) {
+            setPaymentProof({ uri: existingPaymentData.paymentProofUrl });
+            setPaymentProofSet(true);
+          }
         }
         
         // Set timer
@@ -194,6 +422,13 @@ const PaymentScreen = ({ navigation, route }) => {
           const now = new Date();
           const timeLeft = Math.max(0, Math.floor((expirationTime - now) / 1000));
           setTimeRemaining(timeLeft);
+          
+          // Activate timer if there's time remaining and payment is pending
+          if (timeLeft > 0 && existingPaymentData.status === 'pending_payment') {
+            setTimerActive(true);
+          } else {
+            setTimerActive(false);
+          }
         }
       } else {
         // Load existing payment or create new one
@@ -211,16 +446,117 @@ const PaymentScreen = ({ navigation, route }) => {
       setLoading(false);
       setStateLoaded(true);
     }
-  }, [listingId, actualPrice, existingPaymentData, actionType, loadExistingPayment, createPaymentRecordForLockAction]);
+  }, []);
 
-  // Initialize on mount
+
+  // Initialize on mount - only run once when listingId changes
   useEffect(() => {
-    if (listingId && !stateLoaded) {
-      initializePaymentData();
+    if (listingId && !initializationRef.current && !isInitializing) {
+      initializationRef.current = true;
+      setIsInitializing(true);
+      initializePaymentData().finally(() => {
+        setIsInitializing(false);
+        // Load saved payment proof after initialization is complete
+        setTimeout(() => {
+          loadPaymentProof();
+        }, 100);
+      });
     }
-  }, [listingId, stateLoaded, initializePaymentData]);
+    
+    // Reset initialization ref when component unmounts
+    return () => {
+      initializationRef.current = false;
+      setIsInitializing(false);
+    };
+  }, [listingId]);
 
-  // Timer countdown
+  // Real-time payment status listener
+  useEffect(() => {
+    if (!paymentId) return;
+    
+    const paymentRef = doc(db, 'payments', paymentId);
+    const unsubscribe = onSnapshot(paymentRef, (doc) => {
+      if (doc.exists()) {
+        const paymentData = doc.data();
+        
+        // Update payment status
+        setPaymentStatus(paymentData.status || 'pending_payment');
+        
+        // Check if payment has been cancelled
+        if (paymentData.status === 'cancelled') {
+          setTimerActive(false);
+          // Don't show alerts for cancelled payments when viewing them
+          if (!isExpired) {
+            setShowPaymentExpiredModal(true);
+          Alert.alert(
+              'Payment Cancelled',
+              paymentData.cancelledReason || 'Your payment has been automatically cancelled.',
+              [{ text: 'OK', onPress: () => navigation.goBack() }]
+            );
+          }
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to payment updates:', error);
+    });
+    
+    return () => unsubscribe();
+  }, [paymentId, navigation]);
+
+  // Real-time payment timer listener
+  useEffect(() => {
+    if (!paymentId) return;
+
+    const paymentRef = doc(db, 'payments', paymentId);
+    const unsubscribe = onSnapshot(paymentRef, (doc) => {
+      if (doc.exists()) {
+        const paymentData = doc.data();
+        
+        // Update payment status if it changed
+        if (paymentData.status !== paymentStatus) {
+          setPaymentStatus(paymentData.status);
+        }
+        
+        // Update timer if expiration time changed
+        if (paymentData.expirationTime) {
+          const expirationTime = paymentData.expirationTime.toDate ? 
+            paymentData.expirationTime.toDate() : 
+            new Date(paymentData.expirationTime);
+          
+          const now = new Date();
+          const timeLeft = Math.max(0, Math.floor((expirationTime - now) / 1000));
+          
+          console.log(`🔄 Real-time timer update: ${timeLeft} seconds remaining`);
+          setTimeRemaining(timeLeft);
+          
+          // Activate timer if there's time remaining and payment is not completed
+          if (timeLeft > 0 && paymentData.status === 'pending_payment') {
+            setTimerActive(true);
+          } else {
+            setTimerActive(false);
+          }
+          
+          // If time expired, stop timer and show alert (only if not viewing expired payment)
+          if (timeLeft <= 0) {
+            setTimerActive(false);
+            if (!isExpired && paymentData.status !== 'cancelled' && paymentData.status !== 'sold') {
+              Alert.alert(
+                'Payment Expired',
+                'This payment opportunity has expired.',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
+            }
+          }
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to payment timer updates:', error);
+    });
+
+    return () => unsubscribe();
+  }, [paymentId, paymentStatus, navigation]);
+
+  // Timer countdown - only decrements when timer is active
   useEffect(() => {
     if (!timerActive || timeRemaining <= 0) return;
 
@@ -228,11 +564,13 @@ const PaymentScreen = ({ navigation, route }) => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           setTimerActive(false);
-          Alert.alert(
-            'Time Up!',
-            'Your payment time has expired. The opportunity has been passed to the next buyer.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
+          if (paymentStatus !== 'cancelled' && paymentStatus !== 'sold') {
+            Alert.alert(
+              'Time Up!',
+              'Your payment time has expired. The opportunity has been passed to the next buyer.',
+              [{ text: 'OK', onPress: () => navigation.goBack() }]
+            );
+          }
           return 0;
         }
         return prev - 1;
@@ -240,14 +578,21 @@ const PaymentScreen = ({ navigation, route }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timerActive, timeRemaining, navigation]);
+  }, [timerActive, paymentStatus, navigation]);
+
+  // Load user addresses on mount
+  useEffect(() => {
+    if (user?.uid) {
+      loadUserAddresses();
+    }
+  }, [user?.uid]);
 
   // Don't render until fonts are loaded
   if (!fontsLoaded) {
     return null;
   }
 
-  const handleImagePicker = () => {
+  const handleImagePicker = useCallback(() => {
     Alert.alert(
       'Add Payment Proof',
       'Choose how you want to add payment proof',
@@ -257,65 +602,165 @@ const PaymentScreen = ({ navigation, route }) => {
         { text: 'Cancel', style: 'cancel' },
       ]
     );
-  };
+  }, [takePhoto, pickImage]);
 
-  const takePhoto = async () => {
-    try {
+  const takePhoto = useCallback(async () => {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Camera permission is needed to take photos');
+      Alert.alert(
+        'Permission Required',
+        'Sorry, we need camera permissions to make this work!',
+        [{ text: 'OK' }]
+      );
         return;
       }
 
+    try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        console.log('📸 Image selected successfully:', {
+          uri: result.assets[0].uri,
+          width: result.assets[0].width,
+          height: result.assets[0].height,
+          fileSize: result.assets[0].fileSize,
+          type: result.assets[0].type
+        });
+        // Use setTimeout to prevent immediate re-render
+        setTimeout(() => {
         setPaymentProof(result.assets[0]);
+          setPaymentProofSet(true);
+          // Save to AsyncStorage
+          savePaymentProof(result.assets[0]);
+        }, 0);
+      } else {
+        console.log('📸 Image selection cancelled or failed');
       }
     } catch (error) {
       console.error('❌ Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo');
     }
-  };
+  }, []);
 
-  const pickImage = async () => {
-    try {
+  const requestPermissions = useCallback(async () => {
+    if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Photo library permission is needed to select images');
-        return;
+        Alert.alert(
+          'Permission Required',
+          'Sorry, we need camera roll permissions to make this work!',
+          [{ text: 'OK' }]
+        );
+        return false;
       }
+    }
+    return true;
+  }, []);
+
+  const pickImage = useCallback(async () => {
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
+    try {
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
+        mediaTypes: 'images',
+        allowsEditing: false,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
+        console.log('📸 Image selected successfully:', {
+          uri: result.assets[0].uri,
+          width: result.assets[0].width,
+          height: result.assets[0].height,
+          fileSize: result.assets[0].fileSize,
+          type: result.assets[0].type
+        });
+        // Use setTimeout to prevent immediate re-render
+        setTimeout(() => {
         setPaymentProof(result.assets[0]);
+          setPaymentProofSet(true);
+          // Save to AsyncStorage
+          savePaymentProof(result.assets[0]);
+        }, 0);
+      } else {
+        console.log('📸 Image selection cancelled or failed');
       }
     } catch (error) {
       console.error('❌ Error picking image:', error);
       Alert.alert('Error', 'Failed to select image');
     }
+  }, []);
+
+  const removeImage = useCallback(() => {
+    setPaymentProof(null);
+    setPaymentProofSet(false);
+    // Clear from AsyncStorage
+    clearPaymentProof();
+  }, []);
+
+  const handleZoomImage = (imageUrl) => {
+    setZoomImageUrl(imageUrl);
+    setShowZoomModal(true);
   };
 
-  const removeImage = () => {
-    setPaymentProof(null);
+  // Notify seller about payment submission
+  const notifySellerPaymentSubmitted = async (listingData, buyer, actionType, amount) => {
+    try {
+      const sellerId = listingData.sellerId || listingData.userId;
+      if (!sellerId) {
+        console.error('❌ Cannot notify seller: sellerId is missing');
+        return;
+      }
+
+      const title = `💰 Payment Submitted!`;
+      const body = `${buyer.displayName || buyer.email} has submitted payment proof for "${listingData.title || 'your item'}" (${actionType} - ₱${amount}). Please review and confirm the payment.`;
+      
+      const notificationData = {
+        type: 'payment_submitted',
+        listingId: listingData.id,
+        paymentId: paymentId,
+        actionType: actionType,
+        amount: amount,
+        buyerId: buyer.uid,
+        buyerName: buyer.displayName || buyer.email,
+        isPaymentNotification: true
+      };
+      
+      // Remove undefined values
+      Object.keys(notificationData).forEach(key => {
+        if (notificationData[key] === undefined) {
+          delete notificationData[key];
+        }
+      });
+      
+      await NotificationManager.createNotification(
+        sellerId,
+        title,
+        body,
+        notificationData
+      );
+      
+      console.log(`📱 Payment submission notification sent to seller: ${sellerId}`);
+      
+    } catch (error) {
+      console.error('❌ Error notifying seller about payment submission:', error);
+    }
   };
 
   const handleSubmitPayment = async () => {
     
-    // Check if payment timer has expired
-    if (!timerActive || timeRemaining <= 0) {
-      setShowPaymentExpiredModal(true);
+    // Check if payment form is disabled
+    if (isPaymentFormDisabled()) {
+      Alert.alert(
+        'Payment Not Available',
+        'This payment is no longer available for submission.',
+        [{ text: 'OK' }]
+      );
       return;
     }
     
@@ -324,10 +769,24 @@ const PaymentScreen = ({ navigation, route }) => {
       return;
     }
     
+    // Payment proof is now required
     if (!paymentProof) {
       Alert.alert('Error', 'Please upload payment proof');
       return;
     }
+
+    // Validate payment proof image
+    if (!paymentProof.uri) {
+      Alert.alert('Invalid Payment Proof', 'The selected image is invalid. Please try selecting another image.');
+      return;
+    }
+
+    console.log('📸 Payment proof validation passed:', {
+      hasProof: !!paymentProof,
+      uri: paymentProof?.uri,
+      type: paymentProof?.type,
+      fileSize: paymentProof?.fileSize
+    });
 
     if (!selectedPaymentMethod) {
       Alert.alert('Error', 'Please select a payment method');
@@ -339,33 +798,62 @@ const PaymentScreen = ({ navigation, route }) => {
       return;
     }
 
+    if (!selectedAddress) {
+      Alert.alert('Error', 'Please select a delivery address');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      let paymentProofUrl;
+      let paymentProofUrl = null;
       
-      try {
-        paymentProofUrl = await uploadImageToCloudinary(paymentProof.uri);
-      } catch (uploadError) {
-        console.error('❌ Cloudinary upload failed:', uploadError);
-        
-        const shouldContinue = await new Promise((resolve) => {
-          Alert.alert(
-            'Upload Failed',
-            'Failed to upload payment proof image. Would you like to submit the payment without the image?',
-            [
-              { text: 'Cancel', onPress: () => resolve(false) },
-              { text: 'Submit Without Image', onPress: () => resolve(true) }
-            ]
-          );
-        });
-        
-        if (!shouldContinue) {
-          setSubmitting(false);
-          return;
+      // Only upload if payment proof is provided
+      if (paymentProof && paymentProof.uri) {
+        try {
+          console.log('📤 Starting payment proof upload...');
+          console.log('📤 Image details:', {
+            uri: paymentProof.uri,
+            type: paymentProof.type,
+            fileSize: paymentProof.fileSize
+          });
+          
+          paymentProofUrl = await uploadImageToCloudinary(paymentProof.uri);
+      console.log('✅ Payment proof uploaded successfully:', paymentProofUrl);
+        } catch (uploadError) {
+          console.error('❌ Cloudinary upload failed:', uploadError);
+          
+          const shouldContinue = await new Promise((resolve) => {
+            Alert.alert(
+              'Upload Failed',
+              `Failed to upload payment proof image: ${uploadError.message}\n\nWould you like to submit the payment without the image?`,
+              [
+                { text: 'Cancel', onPress: () => resolve(false) },
+                { text: 'Retry Upload', onPress: async () => {
+                  try {
+                    console.log('🔄 Retrying payment proof upload...');
+                    paymentProofUrl = await uploadImageToCloudinary(paymentProof.uri);
+                    console.log('✅ Retry successful:', paymentProofUrl);
+                    resolve(true);
+                  } catch (retryError) {
+                    console.error('❌ Retry failed:', retryError);
+                    resolve(false);
+                  }
+                }},
+                { text: 'Submit Without Image', onPress: () => resolve(true) }
+              ]
+            );
+          });
+          
+          if (!shouldContinue) {
+            setSubmitting(false);
+            return;
+          }
+          
+          paymentProofUrl = null; // Set to null if user chooses to submit without image
         }
-        
-        paymentProofUrl = paymentProof.uri;
+      } else {
+        console.log('📸 No payment proof provided - submitting without image');
       }
 
       let paymentRef;
@@ -377,6 +865,7 @@ const PaymentScreen = ({ navigation, route }) => {
           referenceNumber: referenceNumber.trim(),
           paymentProofUrl,
           notes: notes.trim(),
+          deliveryAddress: selectedAddress,
           status: 'submitted',
           submittedAt: serverTimestamp(),
           lastUpdated: serverTimestamp(),
@@ -385,12 +874,40 @@ const PaymentScreen = ({ navigation, route }) => {
         await updateDoc(doc(db, 'payments', existingPayment.id), paymentData);
         paymentRef = { id: existingPayment.id };
         
+        // Get listing data for notification
+        const listingRef = doc(db, 'listings', listingId);
+        const listingDoc = await getDoc(listingRef);
+        const listingData = { id: listingDoc.id, ...listingDoc.data() };
+        
+        // Notify seller about payment update
+        await notifySellerPaymentSubmitted(listingData, user, actionType, displayPrice);
+        
       } else {
+        // Get listing data to ensure we have sellerId
+        const listingRef = doc(db, 'listings', listingId);
+        const listingDoc = await getDoc(listingRef);
+        if (!listingDoc.exists()) {
+          throw new Error('Listing not found');
+        }
+        const listingData = { id: listingDoc.id, ...listingDoc.data() };
+        
+        console.log('🔍 DEBUGGING LISTING DATA:');
+        console.log('📋 Listing ID:', listingId);
+        console.log('📋 Raw listing data:', listingDoc.data());
+        console.log('📋 Processed listing data:', listingData);
+        console.log('📋 Title field value:', listingData.title);
+        console.log('📋 All listing fields:', Object.keys(listingData));
+        console.log('📋 Title type:', typeof listingData.title);
+        console.log('📋 Title length:', listingData.title ? listingData.title.length : 'undefined');
+        console.log('📋 Final listingTitle to be stored:', listingData.title || 'Unknown Item');
+
         const paymentData = {
           listingId,
           buyerId: user.uid,
           buyerName: user.displayName || user.email,
-          sellerId: listing?.sellerId || '',
+          sellerId: listingData.sellerId || listingData.userId || '',
+          listingTitle: listingData.title || 'Unknown Item',
+          listingImage: listingData.images && listingData.images.length > 0 ? listingData.images[0] : null,
           actionType,
           amount: displayPrice,
           paymentMethod: selectedPaymentMethod.bankName,
@@ -398,12 +915,32 @@ const PaymentScreen = ({ navigation, route }) => {
           referenceNumber: referenceNumber.trim(),
           paymentProofUrl,
           notes: notes.trim(),
+          deliveryAddress: selectedAddress,
           status: 'submitted',
           submittedAt: serverTimestamp(),
           createdAt: serverTimestamp(),
         };
 
+        console.log('💳 Creating payment with data:', {
+          listingId,
+          buyerId: user.uid,
+          sellerId: listingData.sellerId || listingData.userId || '',
+          listingData: {
+            sellerId: listingData.sellerId,
+            userId: listingData.userId,
+            sellerName: listingData.sellerName,
+            title: listingData.title,
+            listingTitle: listingData.listingTitle,
+            name: listingData.name,
+            itemName: listingData.itemName,
+            allFields: Object.keys(listingData)
+          }
+        });
+
         paymentRef = await addDoc(collection(db, 'payments'), paymentData);
+        
+        // Notify seller about payment submission
+        await notifySellerPaymentSubmitted(listingData, user, actionType, displayPrice);
       }
 
       await updateDoc(doc(db, 'listings', listingId), {
@@ -418,13 +955,16 @@ const PaymentScreen = ({ navigation, route }) => {
         userId: user.uid,
         userName: user.displayName || user.email,
         action: 'Payment Submitted',
-        details: `Payment proof submitted for ${actionType} action (₱${displayPrice})`,
+        details: `Payment proof submitted for ${actionType} action (₱${formatPrice(displayPrice)})`,
         timestamp: serverTimestamp(),
       });
 
       await PaymentTimeoutService.onPaymentSubmitted(listingId);
       
       setTimerActive(false);
+
+      // Clear saved payment proof after successful submission
+      clearPaymentProof();
 
       Alert.alert(
         'Payment Submitted!',
@@ -495,13 +1035,15 @@ const PaymentScreen = ({ navigation, route }) => {
                 {actionType} Action
               </Text>
               <Text style={[styles.amount, { fontFamily: fontsLoaded ? "Poppins-Bold" : undefined }]}>
-                ₱{displayPrice || '0'}
+                ₱{formatPrice(displayPrice)}
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Payment Form */}
+        {/* Conditional UI based on payment status */}
+        {paymentStatus === 'pending_payment' ? (
+          /* Payment Form for Pending Payments */
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
             Payment Information
@@ -514,7 +1056,10 @@ const PaymentScreen = ({ navigation, route }) => {
             </Text>
             {paymentProof ? (
               <View style={styles.imageContainer}>
-                <Image source={{ uri: paymentProof.uri }} style={styles.paymentImage} />
+                <Image 
+                  source={{ uri: paymentProof.uri }} 
+                  style={styles.paymentImage}
+                />
                 <TouchableOpacity style={styles.removeImageButton} onPress={removeImage}>
                   <Ionicons name="close" size={20} color="white" />
                 </TouchableOpacity>
@@ -523,14 +1068,14 @@ const PaymentScreen = ({ navigation, route }) => {
               <TouchableOpacity 
                 style={[
                   styles.imagePickerButton,
-                  (!timerActive || timeRemaining <= 0) && styles.disabledInput
+                  isPaymentFormDisabled() && styles.disabledInput
                 ]} 
                 onPress={() => {
-                  if (timerActive && timeRemaining > 0) {
+                  if (!isPaymentFormDisabled()) {
                     handleImagePicker();
                   }
                 }}
-                disabled={!timerActive || timeRemaining <= 0}
+                disabled={isPaymentFormDisabled()}
               >
                 <Ionicons name="camera" size={24} color="#83AFA7" />
                 <Text style={[styles.imagePickerText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
@@ -548,14 +1093,14 @@ const PaymentScreen = ({ navigation, route }) => {
             <TouchableOpacity 
               style={[
                 styles.paymentMethodSelector,
-                (!timerActive || timeRemaining <= 0) && styles.disabledInput
+                isPaymentFormDisabled() && styles.disabledInput
               ]}
               onPress={() => {
-                if (timerActive && timeRemaining > 0) {
+                if (!isPaymentFormDisabled()) {
                   setShowPaymentMethodModal(true);
                 }
               }}
-              disabled={!timerActive || timeRemaining <= 0}
+              disabled={isPaymentFormDisabled()}
             >
               <Text style={[
                 styles.paymentMethodText, 
@@ -571,6 +1116,37 @@ const PaymentScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Delivery Address Selector */}
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+              Delivery Address *
+            </Text>
+            <TouchableOpacity 
+              style={[
+                styles.paymentMethodSelector,
+                isPaymentFormDisabled() && styles.disabledInput
+              ]}
+              onPress={() => {
+                if (!isPaymentFormDisabled()) {
+                  setShowAddressModal(true);
+                }
+              }}
+              disabled={isPaymentFormDisabled()}
+            >
+              <Text style={[
+                styles.paymentMethodText, 
+                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
+                !selectedAddress && styles.placeholderText
+              ]}>
+                {selectedAddress 
+                  ? `${selectedAddress.name} - ${selectedAddress.cityName || selectedAddress.city}`
+                  : 'Select delivery address'
+                }
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#83AFA7" />
+            </TouchableOpacity>
+          </View>
+
           {/* Reference Number */}
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
@@ -580,13 +1156,13 @@ const PaymentScreen = ({ navigation, route }) => {
               style={[
                 styles.textInput, 
                 { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
-                (!timerActive || timeRemaining <= 0) && styles.disabledInput
+                isPaymentFormDisabled() && styles.disabledInput
               ]}
               value={referenceNumber}
               onChangeText={setReferenceNumber}
+              editable={!isPaymentFormDisabled()}
               placeholder="Enter transaction reference number"
               placeholderTextColor="#999"
-              editable={timerActive && timeRemaining > 0}
             />
           </View>
 
@@ -599,22 +1175,161 @@ const PaymentScreen = ({ navigation, route }) => {
               style={[
                 styles.textArea, 
                 { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined },
-                (!timerActive || timeRemaining <= 0) && styles.disabledInput
+                isPaymentFormDisabled() && styles.disabledInput
               ]}
               value={notes}
               onChangeText={setNotes}
+              editable={!isPaymentFormDisabled()}
               placeholder="Any additional information about the payment..."
               placeholderTextColor="#999"
               multiline
               numberOfLines={3}
-              editable={timerActive && timeRemaining > 0}
             />
           </View>
         </View>
+        ) : (
+          /* Read-only Status View for Non-Pending Payments */
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+              Payment Status
+            </Text>
+            
+            {/* Status Card */}
+            <View style={[
+              styles.statusCard,
+              { 
+                backgroundColor: paymentStatus === 'submitted' ? '#E3F2FD' :
+                                paymentStatus === 'approved' ? '#E8F5E8' :
+                                paymentStatus === 'sold' ? '#E8F5E8' :
+                                paymentStatus === 'rejected' ? '#FFEBEE' :
+                                paymentStatus === 'cancelled' ? '#F5F5F5' : '#F5F5F5'
+              }
+            ]}>
+              <View style={styles.statusHeader}>
+                <Ionicons 
+                  name={
+                    paymentStatus === 'submitted' ? 'time-outline' :
+                    paymentStatus === 'approved' ? 'checkmark-circle' :
+                    paymentStatus === 'sold' ? 'trophy' :
+                    paymentStatus === 'rejected' ? 'close-circle' :
+                    paymentStatus === 'cancelled' ? 'ban' : 'help-circle'
+                  } 
+                  size={24} 
+                  color={
+                    paymentStatus === 'submitted' ? '#2196F3' :
+                    paymentStatus === 'approved' ? '#4CAF50' :
+                    paymentStatus === 'sold' ? '#2E7D32' :
+                    paymentStatus === 'rejected' ? '#F44336' :
+                    paymentStatus === 'cancelled' ? '#9E9E9E' : '#9E9E9E'
+                  } 
+                />
+                <Text style={[
+                  styles.statusTitle, 
+                  { 
+                    fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined,
+                    color: paymentStatus === 'submitted' ? '#2196F3' :
+                           paymentStatus === 'approved' ? '#4CAF50' :
+                           paymentStatus === 'sold' ? '#2E7D32' :
+                           paymentStatus === 'rejected' ? '#F44336' :
+                           paymentStatus === 'cancelled' ? '#9E9E9E' : '#9E9E9E'
+                  }
+                ]}>
+                  {paymentStatus === 'submitted' ? 'Payment Submitted' :
+                   paymentStatus === 'approved' ? 'Payment Approved' :
+                   paymentStatus === 'sold' ? 'Transaction Sold' :
+                   paymentStatus === 'rejected' ? 'Payment Rejected' :
+                   paymentStatus === 'cancelled' ? 'Payment Cancelled' : 'Unknown Status'}
+                </Text>
+              </View>
+              
+              <Text style={[
+                styles.statusMessage,
+                { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }
+              ]}>
+                {paymentStatus === 'submitted' ? 'Your payment proof has been submitted and is awaiting seller approval.' :
+                 paymentStatus === 'approved' ? 'Your payment has been approved by the seller. You can now proceed with the transaction.' :
+                 paymentStatus === 'sold' ? 'Transaction completed successfully! The item has been sold and delivered.' :
+                 paymentStatus === 'rejected' ? 'Your payment was rejected by the seller. Please contact them for more information.' :
+                 paymentStatus === 'cancelled' ? 'This payment has been cancelled and is no longer valid.' : 'Status unknown.'}
+              </Text>
+              
+              {/* Payment Details */}
+              <View style={styles.paymentDetails}>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                    Amount:
+                  </Text>
+                  <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+                    ₱{formatPrice(displayPrice)}
+                  </Text>
+                </View>
+                
+                {existingPayment?.paymentMethod && (
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                      Payment Method:
+                    </Text>
+                    <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                      {existingPayment.paymentMethod}
+                    </Text>
+                  </View>
+                )}
+                
+                {existingPayment?.referenceNumber && (
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                      Reference Number:
+                    </Text>
+                    <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                      {existingPayment.referenceNumber}
+                    </Text>
+                  </View>
+                )}
+                
+                {existingPayment?.submittedAt && (
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                      Submitted:
+                    </Text>
+                    <Text style={[styles.detailValue, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                      {existingPayment.submittedAt.toDate ? 
+                        existingPayment.submittedAt.toDate().toLocaleString() : 
+                        new Date(existingPayment.submittedAt).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Payment Proof Image */}
+                {existingPayment?.paymentProofUrl && (
+                  <View style={styles.detailRow}>
+                    <Text style={[styles.detailLabel, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                      Payment Proof:
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.proofImageContainer}
+                      onPress={() => handleZoomImage(existingPayment.paymentProofUrl)}
+                    >
+                      <Image 
+                        source={{ uri: existingPayment.paymentProofUrl }} 
+                        style={styles.proofImage}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.zoomOverlay}>
+                        <Ionicons name="expand" size={24} color="white" />
+                        <Text style={styles.zoomText}>Tap to zoom</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
 
       </ScrollView>
 
-      {/* Submit Button Container with Timer */}
+      {/* Submit Button Container with Timer - Only show for pending payments */}
+      {paymentStatus === 'pending_payment' && (
       <View style={[styles.submitButtonContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom : 16 }]}>
         {/* Payment Timer */}
         <View style={styles.timerInContainer}>
@@ -635,15 +1350,15 @@ const PaymentScreen = ({ navigation, route }) => {
         {/* Submit Button */}
         <TouchableOpacity
           style={[
-            styles.submitButton, 
-            (submitting || !timerActive || timeRemaining <= 0) && styles.submitButtonDisabled
+            styles.submitButton,
+            (submitting || isPaymentFormDisabled()) && styles.submitButtonDisabled
           ]}
           onPress={handleSubmitPayment}
-          disabled={submitting || !timerActive || timeRemaining <= 0}
+          disabled={submitting || isPaymentFormDisabled()}
         >
           <Text style={[styles.submitButtonText, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
-            {!timerActive || timeRemaining <= 0 
-              ? 'Payment Expired' 
+            {isPaymentFormDisabled()
+              ? 'Payment Not Available' 
               : submitting 
                 ? 'Submitting...' 
                 : 'Submit Payment Proof'
@@ -651,6 +1366,7 @@ const PaymentScreen = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
+      )}
 
       {/* Payment Method Selection Modal */}
       <Modal
@@ -710,6 +1426,112 @@ const PaymentScreen = ({ navigation, route }) => {
                   </Text>
                 </View>
               )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Address Selection Modal */}
+      <Modal
+        visible={showAddressModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowAddressModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowAddressModal(false)}>
+                <Text style={[styles.modalCancelText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.modalTitle, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+                Select Delivery Address
+              </Text>
+              <View style={styles.modalSpacer} />
+            </View>
+            
+            <ScrollView style={styles.paymentMethodsList}>
+              {loadingAddresses ? (
+                <View style={styles.noPaymentMethods}>
+                  <Text style={[styles.noPaymentMethodsText, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                    Loading addresses...
+                  </Text>
+                </View>
+              ) : userAddresses.length > 0 ? (
+                userAddresses.map((address, index) => (
+                  <TouchableOpacity
+                    key={address.id || index}
+                    style={[
+                      styles.paymentMethodItem,
+                      selectedAddress?.id === address.id && styles.selectedPaymentMethod
+                    ]}
+                    onPress={() => {
+                      setSelectedAddress(address);
+                      setShowAddressModal(false);
+                    }}
+                  >
+                    <View style={styles.paymentMethodInfo}>
+                      <Text style={[styles.paymentMethodName, { fontFamily: fontsLoaded ? "Poppins-SemiBold" : undefined }]}>
+                        {address.name}
+                        {address.isDefault && (
+                          <Text style={[styles.defaultBadge, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                            {' '}(Default)
+                          </Text>
+                        )}
+                      </Text>
+                      <Text style={[styles.paymentMethodAccount, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                        {address.phone}
+                      </Text>
+                      <Text style={[styles.paymentMethodAccountName, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                        {address.address}, {address.barangayName || address.barangay}, {address.cityName || address.city}, {address.provinceName || address.province}
+                      </Text>
+                    </View>
+                    {selectedAddress?.id === address.id && (
+                      <Ionicons name="checkmark-circle" size={24} color="#83AFA7" />
+                    )}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.noPaymentMethods}>
+                  <Text style={[styles.noPaymentMethodsText, { fontFamily: fontsLoaded ? "Poppins-Regular" : undefined }]}>
+                    No addresses found. Please add an address first.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Zoom Modal */}
+      <Modal
+        visible={showZoomModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowZoomModal(false)}
+      >
+        <View style={styles.zoomModalOverlay}>
+          <View style={styles.zoomModalContainer}>
+            <TouchableOpacity 
+              style={styles.zoomCloseButton}
+              onPress={() => setShowZoomModal(false)}
+            >
+              <Ionicons name="close" size={24} color="white" />
+            </TouchableOpacity>
+            <ScrollView 
+              style={styles.zoomScrollView}
+              maximumZoomScale={5}
+              minimumZoomScale={1}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <Image 
+                source={{ uri: zoomImageUrl }} 
+                style={styles.zoomImage}
+                resizeMode="contain"
+              />
             </ScrollView>
           </View>
         </View>
@@ -955,6 +1777,54 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F0F0',
     opacity: 0.6,
   },
+  statusCard: {
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statusTitle: {
+    fontSize: 18,
+    marginLeft: 12,
+    fontWeight: '600',
+  },
+  statusMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+    color: '#666',
+  },
+  paymentDetails: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+    paddingTop: 16,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+    textAlign: 'right',
+  },
   // Modal Styles
   modalOverlay: {
     flex: 1,
@@ -965,37 +1835,37 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '70%',
+    maxHeight: '50%',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
   },
   modalCancelText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#83AFA7',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#333',
   },
   modalSpacer: {
     width: 60,
   },
   paymentMethodsList: {
-    maxHeight: 400,
+    maxHeight: 300,
   },
   paymentMethodItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
@@ -1006,27 +1876,87 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentMethodName: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   paymentMethodAccount: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginBottom: 2,
   },
   paymentMethodAccountName: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#999',
   },
   noPaymentMethods: {
-    padding: 40,
+    padding: 30,
     alignItems: 'center',
   },
   noPaymentMethodsText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#999',
     textAlign: 'center',
+  },
+  defaultBadge: {
+    color: '#83AFA7',
+    fontSize: 10,
+  },
+  proofImageContainer: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  proofImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  zoomOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  zoomText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    fontFamily: 'Poppins-Medium',
+  },
+  zoomModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomModalContainer: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
+    position: 'relative',
+  },
+  zoomCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  zoomScrollView: {
+    flex: 1,
+  },
+  zoomImage: {
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
   },
 });
 

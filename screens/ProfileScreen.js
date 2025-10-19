@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToCloudinary } from '../config/cloudinary';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { db, auth } from '../config/firebase';
 import NotificationService from '../services/NotificationService';
@@ -23,6 +23,12 @@ const ProfileScreen = ({ navigation }) => {
   const [profileImageKey, setProfileImageKey] = useState(0);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [tempImageUrl, setTempImageUrl] = useState(null);
+  const [realStats, setRealStats] = useState({
+    itemsSold: 0,
+    activeListings: 0,
+    totalFollowers: 0,
+    following: 0
+  });
   
   // Load Poppins fonts
   const [fontsLoaded] = useFonts({
@@ -32,6 +38,56 @@ const ProfileScreen = ({ navigation }) => {
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
   });
 
+  // Fetch real stats data
+  const fetchRealStats = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      // Get items sold count
+      const salesQuery = query(
+        collection(db, 'payments'),
+        where('sellerId', '==', user.uid),
+        where('status', '==', 'sold')
+      );
+      const salesSnapshot = await getDocs(salesQuery);
+      const itemsSold = salesSnapshot.size;
+
+      // Get active listings count
+      const listingsQuery = query(
+        collection(db, 'listings'),
+        where('sellerId', '==', user.uid),
+        where('status', '==', 'active')
+      );
+      const listingsSnapshot = await getDocs(listingsQuery);
+      const activeListings = listingsSnapshot.size;
+
+      // Get followers count
+      const followersQuery = query(
+        collection(db, 'following'),
+        where('followingId', '==', user.uid)
+      );
+      const followersSnapshot = await getDocs(followersQuery);
+      const totalFollowers = followersSnapshot.size;
+
+      // Get following count (people the user follows)
+      const followingQuery = query(
+        collection(db, 'following'),
+        where('followerId', '==', user.uid)
+      );
+      const followingSnapshot = await getDocs(followingQuery);
+      const following = followingSnapshot.size;
+
+      setRealStats({
+        itemsSold,
+        activeListings,
+        totalFollowers,
+        following
+      });
+    } catch (error) {
+      console.error('Error fetching real stats:', error);
+    }
+  };
+
   // Fetch user profile data
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -39,6 +95,7 @@ const ProfileScreen = ({ navigation }) => {
         try {
           const profile = await getUserProfile(user.uid);
           setUserProfile(profile);
+          await fetchRealStats();
         } catch (error) {
           console.error('Error fetching user profile:', error);
         }
@@ -114,7 +171,7 @@ const ProfileScreen = ({ navigation }) => {
       setUploadingImage(true);
 
       const options = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -203,37 +260,37 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const confirmLogout = async () => {
-    try {
-      await logout();
-      navigation.navigate('Login');
-    } catch (error) {
-      console.error('Logout error:', error);
-      Alert.alert('Error', 'Failed to logout. Please try again.');
-    }
+            try {
+              await logout();
+              navigation.navigate('Login');
+            } catch (error) {
+              console.error('Logout error:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            }
   };
 
 
-  // Dynamic stats based on user data
+  // Dynamic stats based on real data
   const profileStats = [
     { 
       label: 'Items Sold', 
-      value: userProfile?.itemsSold || '0', 
+      value: realStats.itemsSold.toString(), 
       icon: 'checkmark-circle-outline' 
     },
     { 
       label: 'Active Listings', 
-      value: userProfile?.activeListings || '0', 
+      value: realStats.activeListings.toString(), 
       icon: 'list-outline' 
     },
     { 
-      label: 'Total Bids', 
-      value: userProfile?.totalBids || '0', 
-      icon: 'hammer-outline' 
+      label: 'Followers', 
+      value: realStats.totalFollowers.toString(), 
+      icon: 'people-outline' 
     },
     { 
-      label: 'Followers', 
-      value: userProfile?.followers || '0', 
-      icon: 'people-outline' 
+      label: 'Following', 
+      value: realStats.following.toString(), 
+      icon: 'heart-outline' 
     },
   ];
 
@@ -241,6 +298,7 @@ const ProfileScreen = ({ navigation }) => {
   const sellerMenuItems = [
     { icon: 'storefront-outline', title: 'My Shop', subtitle: 'Manage your listings', color: '#83AFA7' },
     { icon: 'receipt-outline', title: 'My Sales', subtitle: 'Orders from buyers', color: '#4CAF50' },
+    { icon: 'chatbubbles-outline', title: 'Buyer Comments', subtitle: 'View buyer feedback', color: '#FFD700' },
     { icon: 'card-outline', title: 'My Payment Methods', subtitle: 'Manage payment methods', color: '#2196F3' },
     { icon: 'checkmark-circle-outline', title: 'My Payment Approvals', subtitle: 'Approve buyer payments', color: '#FF9800' },
   ];
@@ -255,8 +313,6 @@ const ProfileScreen = ({ navigation }) => {
   const generalMenuItems = [
     { icon: 'location-outline', title: 'My Address', subtitle: 'Manage your address', color: '#4CAF50' },
     { icon: 'lock-closed-outline', title: 'My Password', subtitle: 'Change password', color: '#FF5722' },
-    { icon: 'settings-outline', title: 'My Settings', subtitle: 'App preferences', color: '#2196F3' },
-    { icon: 'help-circle-outline', title: 'My Help', subtitle: 'Get assistance', color: '#9C27B0' },
   ];
 
   const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
@@ -266,10 +322,12 @@ const ProfileScreen = ({ navigation }) => {
       navigation.navigate('MyShop');
     } else if (title === 'My Sales') {
       navigation.navigate('MySales');
+    } else if (title === 'Buyer Comments') {
+      navigation.navigate('BuyerComments');
     } else if (title === 'My Payment Methods') {
       navigation.navigate('PaymentMethods');
     } else if (title === 'My Payment Approvals') {
-      navigation.navigate('MyPaymentApprovals');
+      navigation.navigate('PaymentApproval');
     } else if (title === 'My Orders') {
       navigation.navigate('MyPayments');
     } else if (title === 'My Favorites') {
@@ -278,10 +336,6 @@ const ProfileScreen = ({ navigation }) => {
       navigation.navigate('MyAddress');
     } else if (title === 'My Password') {
       navigation.navigate('MyPassword');
-    } else if (title === 'My Settings') {
-      navigation.navigate('MySettings');
-    } else if (title === 'My Help') {
-      navigation.navigate('MyHelp');
     } else {
       }
   };
@@ -371,64 +425,79 @@ const ProfileScreen = ({ navigation }) => {
         {/* Seller Menu Items */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Seller</Text>
-          {sellerMenuItems.map((item, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={styles.menuItem}
-              onPress={() => handleMenuPress(item.title)}
-            >
-              <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
-                <Ionicons name={item.icon} size={24} color={item.color} />
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CCC" />
-            </TouchableOpacity>
-          ))}
+          <View style={styles.menuList}>
+            {sellerMenuItems.map((item, index) => (
+              <TouchableOpacity 
+                key={index} 
+                style={[
+                  styles.menuItem,
+                  index === sellerMenuItems.length - 1 && styles.lastMenuItem
+                ]}
+                onPress={() => handleMenuPress(item.title)}
+              >
+                <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
+                  <Ionicons name={item.icon} size={24} color={item.color} />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>{item.title}</Text>
+                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#CCC" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Buyer Menu Items */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Buyer</Text>
-          {buyerMenuItems.map((item, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={styles.menuItem}
-              onPress={() => handleMenuPress(item.title)}
-            >
-              <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
-                <Ionicons name={item.icon} size={24} color={item.color} />
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CCC" />
-            </TouchableOpacity>
-          ))}
+          <View style={styles.menuList}>
+            {buyerMenuItems.map((item, index) => (
+              <TouchableOpacity 
+                key={index} 
+                style={[
+                  styles.menuItem,
+                  index === buyerMenuItems.length - 1 && styles.lastMenuItem
+                ]}
+                onPress={() => handleMenuPress(item.title)}
+              >
+                <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
+                  <Ionicons name={item.icon} size={24} color={item.color} />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>{item.title}</Text>
+                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#CCC" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* General Menu Items */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>General</Text>
-          {generalMenuItems.map((item, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={styles.menuItem}
-              onPress={() => handleMenuPress(item.title)}
-            >
-              <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
-                <Ionicons name={item.icon} size={24} color={item.color} />
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CCC" />
-            </TouchableOpacity>
-          ))}
+          <View style={styles.menuList}>
+            {generalMenuItems.map((item, index) => (
+              <TouchableOpacity 
+                key={index} 
+                style={[
+                  styles.menuItem,
+                  index === generalMenuItems.length - 1 && styles.lastMenuItem
+                ]}
+                onPress={() => handleMenuPress(item.title)}
+              >
+                <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
+                  <Ionicons name={item.icon} size={24} color={item.color} />
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>{item.title}</Text>
+                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#CCC" />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
 
@@ -591,18 +660,25 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 12,
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  menuList: {
     backgroundColor: 'white',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 8,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 2,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  lastMenuItem: {
+    borderBottomWidth: 0,
   },
   menuIcon: {
     width: 36,

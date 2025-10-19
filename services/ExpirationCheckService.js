@@ -20,8 +20,10 @@ class ExpirationCheckService {
 
     this.isRunning = true;
 
-    // Check immediately
-    this.checkExpiredListings();
+    // Add a delay before first check to prevent processing old expired listings on app launch
+    setTimeout(() => {
+      this.checkExpiredListings();
+    }, 10000); // Wait 10 seconds before first check
 
     // Set up interval
     this.intervalId = setInterval(() => {

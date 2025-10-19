@@ -24,7 +24,8 @@
     "notification": {
       "color": "#83AFA7",
       "androidMode": "default",
-      "androidCollapsedTitle": "#{unread_notifications} new interactions"
+      "androidCollapsedTitle": "#{unread_notifications} new interactions",
+      "iosDisplayInForeground": true
     },
     "android": {
       "adaptiveIcon": {
@@ -33,7 +34,19 @@
       },
       "softwareKeyboardLayoutMode": "pan",
       "allowBackup": true,
-      "package": "com.copit.COPit"
+      "package": "com.copit.COPit",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,7 +57,22 @@
       }
     },
     "plugins": [
-      "expo-font"
-    ]
+      "expo-font",
+      "expo-mail-composer",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#83AFA7",
+          "defaultChannel": "default"
+        }
+      ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3091af27-cc4b-407b-99aa-0deccf56f8de"
+    }
   }
 }
