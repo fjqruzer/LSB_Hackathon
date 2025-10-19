@@ -22,7 +22,18 @@ const { width } = Dimensions.get('window');
 const LiveStreamsScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { theme } = useTheme();
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || {
+    colors: {
+      background: '#ffffff',
+      surface: '#f5f5f5',
+      text: '#000000',
+      textSecondary: '#666666',
+      primary: '#007AFF',
+      border: '#e0e0e0',
+    },
+    dark: false
+  };
 
   // State management
   const [liveStreams, setLiveStreams] = useState([]);

@@ -1,7 +1,7 @@
 import { Camera } from 'expo-camera';
 import { Audio, Video } from 'expo-av';
 import { MediaLibrary } from 'expo-media-library';
-import { collection, addDoc, doc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, onSnapshot, query, where, orderBy, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import NotificationManager from './NotificationManager';
 
@@ -240,11 +240,11 @@ class StreamingService {
   // Get active streams for a listing
   async getActiveStreams(listingId) {
     try {
+      // Simple query without orderBy to avoid index requirement
       const streamsQuery = query(
         collection(db, 'streams'),
         where('listingId', '==', listingId),
-        where('status', '==', 'live'),
-        orderBy('startTime', 'desc')
+        where('status', '==', 'live')
       );
 
       const snapshot = await getDocs(streamsQuery);
@@ -252,6 +252,13 @@ class StreamingService {
       
       snapshot.forEach((doc) => {
         streams.push({ id: doc.id, ...doc.data() });
+      });
+      
+      // Sort by startTime on client side
+      streams.sort((a, b) => {
+        const aTime = a.startTime?.toDate?.() || new Date(a.startTime);
+        const bTime = b.startTime?.toDate?.() || new Date(b.startTime);
+        return bTime - aTime; // Most recent first
       });
       
       return streams;
@@ -264,10 +271,10 @@ class StreamingService {
   // Get all live streams
   async getAllLiveStreams() {
     try {
+      // Simple query without orderBy to avoid index requirement
       const streamsQuery = query(
         collection(db, 'streams'),
-        where('status', '==', 'live'),
-        orderBy('startTime', 'desc')
+        where('status', '==', 'live')
       );
 
       const snapshot = await getDocs(streamsQuery);
@@ -275,6 +282,13 @@ class StreamingService {
       
       snapshot.forEach((doc) => {
         streams.push({ id: doc.id, ...doc.data() });
+      });
+      
+      // Sort by startTime on client side
+      streams.sort((a, b) => {
+        const aTime = a.startTime?.toDate?.() || new Date(a.startTime);
+        const bTime = b.startTime?.toDate?.() || new Date(b.startTime);
+        return bTime - aTime; // Most recent first
       });
       
       return streams;

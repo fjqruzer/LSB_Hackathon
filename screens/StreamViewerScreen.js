@@ -24,7 +24,18 @@ const { width, height } = Dimensions.get('window');
 const StreamViewerScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { theme } = useTheme();
+  const themeContext = useTheme();
+  const theme = themeContext?.theme || {
+    colors: {
+      background: '#ffffff',
+      surface: '#f5f5f5',
+      text: '#000000',
+      textSecondary: '#666666',
+      primary: '#007AFF',
+      border: '#e0e0e0',
+    },
+    dark: false
+  };
   const { stream } = route.params || {};
 
   // State management
@@ -413,7 +424,7 @@ const StreamViewerScreen = ({ navigation, route }) => {
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.streamTitle} numberOfLines={1}>
-            {streamData?.title || 'Live Stream'}
+            {streamData?.title || 'hello Stream'}
           </Text>
         </View>
         <View style={styles.headerRight}>
@@ -443,7 +454,7 @@ const StreamViewerScreen = ({ navigation, route }) => {
       {/* Video Player */}
       <View style={styles.videoContainer}>
         <View style={styles.videoPlaceholder}>
-          <Text style={styles.videoText}>📹 Live Stream</Text>
+          <Text style={styles.videoText}>📹 Testing Stream</Text>
           <Text style={styles.statusText}>
             {streamStatus === 'live' ? 'Live' : 'Connecting...'}
           </Text>

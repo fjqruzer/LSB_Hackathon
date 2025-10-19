@@ -386,7 +386,17 @@ const MainNavigationContent = () => {
       case 'LiveStreams':
         return (
           <LiveStreamsScreen 
-            navigation={{ goBack: () => setCurrentScreen('marketplace') }}
+            navigation={{ 
+              goBack: () => setCurrentScreen('marketplace'),
+              navigate: (screen, params) => {
+                if (screen === 'StreamViewer') {
+                  setPaymentParams({ stream: params.stream });
+                  setCurrentScreen('StreamViewer');
+                } else {
+                  setCurrentScreen(screen);
+                }
+              }
+            }}
           />
         );
       default:
