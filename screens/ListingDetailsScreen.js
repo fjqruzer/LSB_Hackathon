@@ -27,7 +27,7 @@ import RealTimeActionListener from '../services/RealTimeActionListener';
 import ChatService from '../services/ChatService';
 import { PanGestureHandler, GestureHandlerRootView, State } from 'react-native-gesture-handler';
 import { db } from '../config/firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, doc, updateDoc, getDocs, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, onSnapshot, doc, updateDoc, getDocs, getDoc, serverTimestamp, increment } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -179,6 +179,8 @@ const ListingDetailsScreen = ({ navigation, route }) => {
   useEffect(() => {
     if (listing?.id && user?.uid) {
       RealTimeActionListener.addListingInterest(listing.id);
+      // Track listing view
+      trackListingView(listing.id, user.uid);
     }
 
     // Cleanup when component unmounts
@@ -1220,6 +1222,55 @@ const ListingDetailsScreen = ({ navigation, route }) => {
       } catch (error) {
       console.error('Error saving activity log:', error);
       // Don't throw error, just log it - activity log is not critical for bid functionality
+    }
+  };
+
+  // Track listing view
+  const trackListingView = async (listingId, userId) => {
+    try {
+      // Check if user has already viewed this listing recently (within last hour)
+      const oneHourAgo = new Date(Date.now() - (60 * 60 * 1000));
+      const existingViewQuery = query(
+        collection(db, 'listingViews'),
+        where('listingId', '==', listingId),
+        where('userId', '==', userId)
+      );
+      
+      const existingViewSnapshot = await getDocs(existingViewQuery);
+      
+      // Check if there's a recent view
+      const recentView = existingViewSnapshot.docs.find(doc => {
+        const data = doc.data();
+        const viewTime = data.viewedAt?.toDate?.() || new Date(data.viewedAt);
+        return viewTime >= oneHourAgo;
+      });
+      
+      if (recentView) {
+        console.log(`👀 User ${userId} already viewed listing ${listingId} recently`);
+        return;
+      }
+      
+      // Create new view record
+      const viewData = {
+        listingId,
+        userId,
+        viewedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'listingViews'), viewData);
+      console.log(`👀 Tracked view for user ${userId} on listing ${listingId}`);
+      
+      // Update listing view count
+      const listingRef = doc(db, 'listings', listingId);
+      await updateDoc(listingRef, {
+        views: increment(1),
+        lastViewedAt: serverTimestamp()
+      });
+      
+    } catch (error) {
+      console.error('❌ Error tracking listing view:', error);
+      // Don't throw error, just log it - view tracking is not critical
     }
   };
 

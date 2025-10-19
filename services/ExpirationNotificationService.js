@@ -232,6 +232,8 @@ class ExpirationNotificationService {
         await this.updateListingStatus(listing.id, 'expired');
         // Notify seller about no winner
         await this.notifySellerNoWinner(currentListing);
+        // Notify all viewers that listing expired with no winner
+        await this.notifyAllViewersNoWinner(currentListing);
         }
       
       } catch (error) {
@@ -453,20 +455,30 @@ class ExpirationNotificationService {
       const participants = await this.getListingParticipants(listing.id);
       const otherParticipants = participants.filter(id => id !== winner.userId);
       
-      if (otherParticipants.length === 0) {
+      // Also get all users who viewed this listing (tracked in listingViews)
+      const viewers = await this.getListingViewers(listing.id);
+      const otherViewers = viewers.filter(id => id !== winner.userId && !participants.includes(id));
+      
+      // Combine participants and viewers, removing duplicates
+      const allInterestedUsers = [...new Set([...otherParticipants, ...otherViewers])];
+      
+      if (allInterestedUsers.length === 0) {
+        console.log(`📊 No other interested users found for listing ${listing.id}`);
         return;
       }
+      
+      console.log(`📊 Found ${allInterestedUsers.length} interested users to notify for listing ${listing.id}`);
       
       const title = `⏰ Listing Expired - You Didn't Win`;
       const body = `The listing "${listing.title}" has expired. ${winner.userName} won with ${winner.action} action. Better luck next time!`;
       
-      // Create database notifications for all participants
-      for (const participantId of otherParticipants) {
-        // Check if notification already exists for this participant (simplified query to avoid index requirement)
+      // Create database notifications for all interested users
+      for (const userId of allInterestedUsers) {
+        // Check if notification already exists for this user (simplified query to avoid index requirement)
         const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
         const existingNotificationQuery = query(
           collection(db, 'notifications'),
-          where('recipientId', '==', participantId),
+          where('recipientId', '==', userId),
           where('data.type', '==', 'listing_expired_lost')
         );
         
@@ -478,14 +490,14 @@ class ExpirationNotificationService {
           return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
         });
         if (recentNotifications.length > 0) {
-          console.log(`⏭️ Recent notification already exists for participant ${participantId} and listing ${listing.id}`);
+          console.log(`⏭️ Recent notification already exists for user ${userId} and listing ${listing.id}`);
           continue;
         }
         
         // Final check right before creating notification - double-check for race conditions (simplified)
         const finalCheckQuery = query(
           collection(db, 'notifications'),
-          where('recipientId', '==', participantId),
+          where('recipientId', '==', userId),
           where('data.type', '==', 'listing_expired_lost')
         );
         
@@ -502,7 +514,7 @@ class ExpirationNotificationService {
         }
         
         await NotificationManager.createNotification(
-          participantId,
+          userId,
           title,
           body,
           {
@@ -548,6 +560,35 @@ class ExpirationNotificationService {
     }
   }
 
+  // Get all users who have viewed a listing (tracked in listingViews collection)
+  async getListingViewers(listingId) {
+    try {
+      // Get all views for this listing
+      const viewsQuery = query(
+        collection(db, 'listingViews'),
+        where('listingId', '==', listingId)
+      );
+      
+      const viewsSnapshot = await getDocs(viewsQuery);
+      const viewers = new Set();
+      
+      viewsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.userId) {
+          viewers.add(data.userId);
+        }
+      });
+      
+      const viewerArray = Array.from(viewers);
+      console.log(`👀 Found ${viewerArray.length} viewers for listing ${listingId}`);
+      
+      return viewerArray;
+    } catch (error) {
+      console.error('❌ Error getting listing viewers:', error);
+      return [];
+    }
+  }
+
   // Get push tokens for multiple users
   async getUserPushTokens(userIds) {
     try {
@@ -589,6 +630,60 @@ class ExpirationNotificationService {
       // No winner notification sent to seller
     } catch (error) {
       console.error('❌ Error notifying seller (no winner):', error);
+    }
+  }
+
+  // Notify all viewers when listing expires with no winner
+  async notifyAllViewersNoWinner(listing) {
+    try {
+      // Get all users who viewed this listing
+      const viewers = await this.getListingViewers(listing.id);
+      
+      if (viewers.length === 0) {
+        console.log(`📊 No viewers found for listing ${listing.id}`);
+        return;
+      }
+      
+      console.log(`📊 Found ${viewers.length} viewers to notify for listing ${listing.id} (no winner)`);
+      
+      const title = `⏰ Listing Expired - No Winner`;
+      const body = `The listing "${listing.title}" has expired with no actions performed. It may be reposted soon!`;
+      
+      // Create database notifications for all viewers
+      for (const userId of viewers) {
+        // Check if notification already exists for this user (simplified query to avoid index requirement)
+        const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+        const existingNotificationQuery = query(
+          collection(db, 'notifications'),
+          where('recipientId', '==', userId),
+          where('data.type', '==', 'listing_expired_no_winner')
+        );
+        
+        const existingSnapshot = await getDocs(existingNotificationQuery);
+        // Client-side filtering for listingId and timestamp
+        const recentNotifications = existingSnapshot.docs.filter(doc => {
+          const data = doc.data();
+          const createdAt = data.createdAt?.toDate();
+          return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
+        });
+        if (recentNotifications.length > 0) {
+          console.log(`⏭️ Recent notification already exists for user ${userId} and listing ${listing.id}`);
+          continue;
+        }
+        
+        await NotificationManager.createNotification(
+          userId,
+          title,
+          body,
+          {
+            type: 'listing_expired_no_winner',
+            listingId: listing.id,
+          }
+        );
+      }
+      
+    } catch (error) {
+      console.error('❌ Error notifying viewers (no winner):', error);
     }
   }
 
