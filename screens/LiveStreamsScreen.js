@@ -338,7 +338,7 @@ const LiveStreamsScreen = ({ navigation }) => {
       marginBottom: 30,
     },
     startStreamButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
       paddingHorizontal: 30,
       paddingVertical: 15,
       borderRadius: 8,

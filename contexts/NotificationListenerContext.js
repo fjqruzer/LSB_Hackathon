@@ -3,6 +3,7 @@ import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestor
 import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
 import NotificationService from '../services/NotificationService';
+import NotificationManager from '../services/NotificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 
@@ -215,8 +216,6 @@ export const NotificationListenerProvider = ({ children }) => {
 
   const markAsRead = async (notificationId) => {
     try {
-      // Import NotificationManager
-      const NotificationManager = (await import('../services/NotificationManager')).default;
       
       // Mark notification as read in Firestore
       await NotificationManager.markAsRead(notificationId);
@@ -237,8 +236,6 @@ export const NotificationListenerProvider = ({ children }) => {
 
   const markAllAsRead = async () => {
     try {
-      // Import NotificationManager
-      const NotificationManager = (await import('../services/NotificationManager')).default;
       
       // Mark all notifications as read
       const markPromises = notifications.map(notif => 

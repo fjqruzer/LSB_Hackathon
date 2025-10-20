@@ -347,13 +347,13 @@ const LiveStreamScreen = ({ navigation, route }) => {
       borderRadius: 25,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
     },
     muteButton: {
-      backgroundColor: isMuted ? '#ff4444' : theme.colors.primary,
+      backgroundColor: isMuted ? '#ff4444' : '#F68652',
     },
     cameraButton: {
-      backgroundColor: isCameraOn ? theme.colors.primary : '#ff4444',
+      backgroundColor: isCameraOn ? '#F68652' : '#ff4444',
     },
     streamInfo: {
       padding: 20,
@@ -480,7 +480,7 @@ const LiveStreamScreen = ({ navigation, route }) => {
       textAlignVertical: 'top',
     },
     startButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
       paddingVertical: 15,
       borderRadius: 8,
       alignItems: 'center',

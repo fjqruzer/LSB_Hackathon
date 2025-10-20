@@ -22,6 +22,7 @@ import NotificationService from './services/NotificationService';
 import ExpirationNotificationService from './services/ExpirationNotificationService';
 import ExpirationCheckService from './services/ExpirationCheckService';
 import PaymentTimeoutService from './services/PaymentTimeoutService';
+import * as Notifications from 'expo-notifications';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from './config/firebase';
 
@@ -183,9 +184,7 @@ function AppNavigator() {
   useEffect(() => {
     const setupNotificationListener = async () => {
       try {
-        const { addNotificationResponseReceivedListener } = await import('expo-notifications');
-        
-        const responseListener = addNotificationResponseReceivedListener(response => {
+        const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
           const data = response.notification.request.content.data;
           
           // Handle navigation using context

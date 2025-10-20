@@ -101,8 +101,6 @@ class ExpirationNotificationService {
       this.processingListings.add(listing.id);
       
       // Fetch the latest listing data to check current status
-      const { doc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
       const listingRef = doc(db, 'listings', listing.id);
       const listingSnapshot = await getDoc(listingRef);
       
