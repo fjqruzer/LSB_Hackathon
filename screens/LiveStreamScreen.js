@@ -17,8 +17,13 @@ import { useFonts } from 'expo-font';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import StreamingService from '../services/StreamingService';
-import { Camera } from 'expo-camera';
+import VideoStreamingService from '../services/VideoStreamingService';
+import LiveStreamingService from '../services/LiveStreamingService';
+import RealTimeStreamingService from '../services/RealTimeStreamingService';
+import * as Camera from 'expo-camera';
 import { Audio } from 'expo-av';
+
+// Camera import check will be done inside the component
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,11 +55,36 @@ const LiveStreamScreen = ({ navigation, route }) => {
   const [audioPermission, setAudioPermission] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(true);
+  const [cameraReady, setCameraReady] = useState(false);
   const [streamStatus, setStreamStatus] = useState('idle'); // idle, starting, live, ending
+  const [streamUrl, setStreamUrl] = useState(null);
 
   // Refs
   const cameraRef = useRef(null);
   const chatScrollRef = useRef(null);
+
+  // Check if Camera is available (moved inside component)
+  const isCameraAvailable = React.useMemo(() => {
+    try {
+      // With namespace import, the Camera component is Camera.CameraView
+      const available = Camera && typeof Camera === 'object' && Camera.CameraView;
+      console.log('📷 Camera availability check:', { 
+        Camera: Camera ? 'Available' : 'Not Available', 
+        available, 
+        type: typeof Camera,
+        isFunction: typeof Camera === 'function',
+        isObject: typeof Camera === 'object',
+        CameraObject: Camera,
+        hasDefault: Camera?.default,
+        hasCameraView: Camera?.CameraView,
+        CameraKeys: Camera ? Object.keys(Camera) : 'No keys'
+      });
+      return available;
+    } catch (error) {
+      console.error('❌ Camera import error:', error);
+      return false;
+    }
+  }, []);
 
   // Load fonts
   const [fontsLoaded] = useFonts({
@@ -68,12 +98,31 @@ const LiveStreamScreen = ({ navigation, route }) => {
     requestPermissions();
     return () => {
       StreamingService.cleanup();
+      RealTimeStreamingService.stopStreaming();
     };
   }, []);
 
   const requestPermissions = async () => {
     try {
-      const cameraPermission = await Camera.requestCameraPermissionsAsync();
+      // Request camera and audio permissions
+      console.log('📷 Camera object:', Camera);
+      console.log('📷 Available methods:', Camera ? Object.keys(Camera) : 'No keys');
+      
+      let cameraPermission;
+      if (Camera.requestCameraPermissionsAsync) {
+        console.log('📷 Using Camera.requestCameraPermissionsAsync');
+        cameraPermission = await Camera.requestCameraPermissionsAsync();
+      } else if (Camera.Camera && Camera.Camera.requestCameraPermissionsAsync) {
+        console.log('📷 Using Camera.Camera.requestCameraPermissionsAsync');
+        cameraPermission = await Camera.Camera.requestCameraPermissionsAsync();
+      } else if (Camera.default && Camera.default.requestCameraPermissionsAsync) {
+        console.log('📷 Using Camera.default.requestCameraPermissionsAsync');
+        cameraPermission = await Camera.default.requestCameraPermissionsAsync();
+      } else {
+        console.error('❌ No camera permission method found');
+        throw new Error('Camera permission method not available');
+      }
+      
       const audioPermission = await Audio.requestPermissionsAsync();
       
       setCameraPermission(cameraPermission.status);
@@ -90,12 +139,26 @@ const LiveStreamScreen = ({ navigation, route }) => {
         return;
       }
 
+      setStreamStatus('starting');
+      
+      // Request permissions first
+      console.log('📷 Requesting permissions before stream start...');
+      await requestPermissions();
+      
+      // Wait a bit for permissions to be set
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('📷 Permission status after request:', { 
+        cameraPermission, 
+        audioPermission,
+        isCameraAvailable 
+      });
+
       if (cameraPermission !== 'granted' || audioPermission !== 'granted') {
         Alert.alert('Permissions Required', 'Camera and microphone permissions are required for streaming');
+        setStreamStatus('idle');
         return;
       }
-
-      setStreamStatus('starting');
       
       const streamId = await StreamingService.startStream(
         listing?.id,
@@ -104,6 +167,17 @@ const LiveStreamScreen = ({ navigation, route }) => {
         streamTitle,
         streamDescription
       );
+
+      // Start real-time video streaming
+      console.log('🎥 Starting real-time video stream...');
+      const streamInfo = await RealTimeStreamingService.startStreaming(
+        streamId, 
+        user.displayName || user.email
+      );
+      
+      // Camera will be used directly for streaming
+      setStreamUrl(null);
+      console.log('✅ Real-time streaming started with camera');
 
       setIsStreaming(true);
       setStreamStatus('live');
@@ -117,7 +191,12 @@ const LiveStreamScreen = ({ navigation, route }) => {
         }, 100);
       });
 
-      Alert.alert('Stream Started!', 'Your live stream is now active');
+      Alert.alert('Stream Started!', 'Your live stream is now active', [
+        { text: 'OK', onPress: () => {
+          // Stay in the live stream interface
+          console.log('Stream started successfully, staying in live stream');
+        }}
+      ]);
       
     } catch (error) {
       console.error('Error starting stream:', error);
@@ -138,12 +217,19 @@ const LiveStreamScreen = ({ navigation, route }) => {
             style: 'destructive',
             onPress: async () => {
               setStreamStatus('ending');
-              await StreamingService.stopStream();
+              const result = await StreamingService.stopStream();
+              await RealTimeStreamingService.stopStreaming();
               setIsStreaming(false);
               setStreamStatus('idle');
               setViewerCount(0);
               setChatMessages([]);
+              
+              if (result.success) {
+                Alert.alert('Stream Ended', result.message || 'Your live stream has been ended');
+              } else {
+                console.warn('Stream stop warning:', result.error);
               Alert.alert('Stream Ended', 'Your live stream has been ended');
+              }
             }
           }
         ]
@@ -176,8 +262,11 @@ const LiveStreamScreen = ({ navigation, route }) => {
   };
 
   const toggleCamera = () => {
+    console.log('📹 Toggling camera:', isCameraOn ? 'OFF' : 'ON');
+    console.log('📹 Camera availability:', isCameraAvailable);
+    console.log('📹 VDO Ninja camera toggled');
     setIsCameraOn(!isCameraOn);
-    // Implement camera on/off functionality
+    // VDO Ninja camera on/off functionality
   };
 
   const formatTime = (timestamp) => {
@@ -234,6 +323,10 @@ const LiveStreamScreen = ({ navigation, route }) => {
       backgroundColor: '#1a1a1a',
       justifyContent: 'center',
       alignItems: 'center',
+    },
+    camera: {
+      width: '100%',
+      height: '100%',
     },
     cameraText: {
       color: '#fff',
@@ -432,7 +525,28 @@ const LiveStreamScreen = ({ navigation, route }) => {
         </Text>
         <TouchableOpacity
           style={styles.closeButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            if (isStreaming) {
+              Alert.alert(
+                'End Stream',
+                'Are you sure you want to end the live stream?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'End Stream', 
+                    style: 'destructive',
+                    onPress: async () => {
+                      const result = await stopStream();
+                      console.log('Close button stop result:', result);
+                      navigation.goBack();
+                    }
+                  }
+                ]
+              );
+            } else {
+              navigation.goBack();
+            }
+          }}
         >
           <Ionicons name="close" size={24} color={theme.colors.text} />
         </TouchableOpacity>
@@ -489,11 +603,56 @@ const LiveStreamScreen = ({ navigation, route }) => {
         <View style={styles.content}>
           {/* Camera View */}
           <View style={styles.cameraContainer}>
+            {console.log('📹 Render check:', { 
+              isCameraOn, 
+              isCameraAvailable, 
+              cameraPermission, 
+              CameraObject: Camera,
+              CameraDefault: Camera?.default,
+              CameraKeys: Camera ? Object.keys(Camera) : 'No keys'
+            })}
+            {isCameraOn && isCameraAvailable && cameraPermission === 'granted' ? (
+              <Camera.CameraView
+                ref={cameraRef}
+                style={styles.camera}
+                facing="back"
+                onCameraReady={() => {
+                  console.log('📹 Camera is ready');
+                  setCameraReady(true);
+                }}
+                onMountError={(error) => {
+                  console.error('📹 Camera mount error:', error);
+                  setCameraReady(false);
+                }}
+              />
+            ) : isCameraOn && cameraPermission !== 'granted' ? (
+              <View style={styles.cameraPlaceholder}>
+                <Text style={styles.cameraText}>
+                  📹 Camera Permission Required
+                </Text>
+                <Text style={[styles.cameraText, { fontSize: 12, marginTop: 10 }]}>
+                  Please grant camera permission to see live footage
+                </Text>
+              </View>
+            ) : isCameraOn && !isCameraAvailable ? (
+              <View style={styles.cameraPlaceholder}>
+                <Text style={styles.cameraText}>
+                  📹 Camera Loading...
+                </Text>
+                <Text style={[styles.cameraText, { fontSize: 12, marginTop: 10 }]}>
+                  Camera: {typeof Camera}, Available: {isCameraAvailable ? 'Yes' : 'No'}
+                </Text>
+              </View>
+            ) : (
             <View style={styles.cameraPlaceholder}>
               <Text style={styles.cameraText}>
-                {isCameraOn ? '📹 Live Camera Feed' : '📹 Camera Off'}
+                  📹 Camera Off
+                </Text>
+                <Text style={[styles.cameraText, { fontSize: 12, marginTop: 10 }]}>
+                  Tap camera button to start live stream
               </Text>
             </View>
+            )}
           </View>
 
           {/* Stream Info */}

@@ -17,6 +17,10 @@ import { useFonts } from 'expo-font';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import StreamingService from '../services/StreamingService';
+import VideoStreamingService from '../services/VideoStreamingService';
+import LiveStreamingService from '../services/LiveStreamingService';
+import RealTimeStreamingService from '../services/RealTimeStreamingService';
+import { WebView } from 'react-native-webview';
 import { Video } from 'expo-av';
 
 const { width, height } = Dimensions.get('window');
@@ -47,6 +51,7 @@ const StreamViewerScreen = ({ navigation, route }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showChat, setShowChat] = useState(true);
   const [streamData, setStreamData] = useState(stream);
+  const [streamUrl, setStreamUrl] = useState(null);
 
   // Refs
   const videoRef = useRef(null);
@@ -68,12 +73,20 @@ const StreamViewerScreen = ({ navigation, route }) => {
       if (isJoined) {
         leaveStream();
       }
+      RealTimeStreamingService.stopStreaming();
     };
   }, [stream?.id]);
 
   const joinStream = async () => {
     try {
       console.log('👀 Joining stream:', stream.id);
+      console.log('🔍 Stream data received:', {
+        id: stream.id,
+        title: stream.title,
+        streamerName: stream.streamerName,
+        status: stream.status,
+        fullStream: stream
+      });
       
       await StreamingService.joinStream(
         stream.id,
@@ -81,8 +94,24 @@ const StreamViewerScreen = ({ navigation, route }) => {
         user.displayName || user.email
       );
 
+      // Start real-time live video viewing
+      console.log('🎥 Starting real-time live video viewing...');
+      const streamInfo = await RealTimeStreamingService.joinStream(
+        stream.id,
+        user.displayName || user.email
+      );
+      
+      // Generate real-time stream URL for Video component
+      const url = RealTimeStreamingService.getStreamUrl(
+        streamData?.streamerName || 'Streamer',
+        false // isStreamer
+      );
+      setStreamUrl(url);
+      console.log('✅ Real-time live video viewing started with URL:', url);
+
       setIsJoined(true);
       setStreamStatus('live');
+      console.log('✅ Stream joined successfully, status set to live');
 
       // Start listening to chat
       const unsubscribe = await StreamingService.getStreamChat(stream.id, (messages) => {
@@ -100,6 +129,7 @@ const StreamViewerScreen = ({ navigation, route }) => {
       console.error('Error joining stream:', error);
       Alert.alert('Error', 'Failed to join stream');
       setStreamStatus('error');
+      console.log('❌ Stream join failed, status set to error');
     }
   };
 
@@ -229,6 +259,35 @@ const StreamViewerScreen = ({ navigation, route }) => {
       fontSize: 14,
       fontFamily: 'Poppins-Regular',
       textAlign: 'center',
+    },
+    cameraFeedSimulation: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: '#1a1a1a',
+      borderRadius: 8,
+      padding: 20,
+    },
+    liveIndicator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 15,
+      backgroundColor: 'rgba(255, 0, 0, 0.8)',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+    liveDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#fff',
+      marginRight: 6,
+    },
+    liveText: {
+      color: '#fff',
+      fontSize: 12,
+      fontFamily: 'Poppins-Bold',
     },
     streamInfo: {
       position: 'absolute',
@@ -453,12 +512,56 @@ const StreamViewerScreen = ({ navigation, route }) => {
 
       {/* Video Player */}
       <View style={styles.videoContainer}>
-        <View style={styles.videoPlaceholder}>
-          <Text style={styles.videoText}>📹 Testing Stream</Text>
-          <Text style={styles.statusText}>
-            {streamStatus === 'live' ? 'Live' : 'Connecting...'}
-          </Text>
-        </View>
+        {streamStatus === 'live' && streamUrl ? (
+          <Video
+            source={{ uri: streamUrl }}
+            style={styles.videoPlaceholder}
+            shouldPlay={true}
+            isLooping={false}
+            resizeMode="cover"
+            onLoad={() => console.log('📹 Viewer Video loaded')}
+            onError={(error) => console.error('📹 Viewer Video error:', error)}
+            onPlaybackStatusUpdate={(status) => {
+              if (status.isLoaded) {
+                console.log('📹 Video status:', status.positionMillis, status.durationMillis);
+              }
+            }}
+          />
+        ) : streamStatus === 'live' ? (
+          <View style={styles.videoPlaceholder}>
+            {/* Fallback when Agora is not available */}
+            <View style={styles.cameraFeedSimulation}>
+              <Text style={styles.videoText}>📹 LIVE</Text>
+              <Text style={styles.statusText}>
+                {streamData?.streamerName || 'Streamer'} is live
+              </Text>
+              <View style={styles.liveIndicator}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+              <Text style={[styles.statusText, { fontSize: 12, marginTop: 20 }]}>
+                📹 Camera feed from {streamData?.streamerName || 'Streamer'}
+              </Text>
+              <Text style={[styles.statusText, { fontSize: 10, marginTop: 10, opacity: 0.7 }]}>
+                Real-time video streaming
+              </Text>
+            </View>
+          </View>
+        ) : streamStatus === 'error' ? (
+          <View style={styles.videoPlaceholder}>
+            <Text style={styles.videoText}>❌ Stream Error</Text>
+            <Text style={styles.statusText}>
+              Failed to connect to stream
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.videoPlaceholder}>
+            <Text style={styles.videoText}>📹 Connecting...</Text>
+            <Text style={styles.statusText}>
+              Joining {streamData?.streamerName || 'Streamer'}'s stream
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Stream Info Overlay */}

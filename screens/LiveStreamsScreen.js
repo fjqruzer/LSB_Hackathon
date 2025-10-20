@@ -55,7 +55,9 @@ const LiveStreamsScreen = ({ navigation }) => {
   const loadLiveStreams = async () => {
     try {
       setLoading(true);
+      console.log('📺 Loading live streams...');
       const streams = await StreamingService.getAllLiveStreams();
+      console.log('📺 Live streams loaded:', streams.length, 'streams');
       setLiveStreams(streams);
     } catch (error) {
       console.error('Error loading live streams:', error);
@@ -71,7 +73,19 @@ const LiveStreamsScreen = ({ navigation }) => {
   };
 
   const joinStream = (stream) => {
+    console.log('🎯 Stream selected for viewing:', {
+      id: stream.id,
+      title: stream.title,
+      streamerName: stream.streamerName,
+      status: stream.status,
+      fullStream: stream
+    });
     navigation.navigate('StreamViewer', { stream });
+  };
+
+  const startStream = () => {
+    console.log('🎥 Starting new stream...');
+    navigation.navigate('LiveStream', {});
   };
 
   const formatDuration = (startTime) => {
@@ -142,7 +156,12 @@ const LiveStreamsScreen = ({ navigation }) => {
       </Text>
       <TouchableOpacity
         style={styles.startStreamButton}
-        onPress={() => navigation.navigate('PostListing')}
+        onPress={() => {
+          // Navigate to LiveStream screen to start streaming
+          navigation.navigate('LiveStream', { 
+            listing: null // No specific listing, just start a general stream
+          });
+        }}
       >
         <Text style={styles.startStreamButtonText}>Start Streaming</Text>
       </TouchableOpacity>
@@ -173,6 +192,22 @@ const LiveStreamsScreen = ({ navigation }) => {
       fontSize: 20,
       fontFamily: 'Poppins-SemiBold',
       color: theme.colors.text,
+    },
+    floatingStartButton: {
+      position: 'absolute',
+      bottom: 30,
+      right: 20,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: theme.colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
     },
     refreshButton: {
       padding: 8,
@@ -367,6 +402,14 @@ const LiveStreamsScreen = ({ navigation }) => {
           />
         )}
       </View>
+
+      {/* Floating Start Stream Button */}
+      <TouchableOpacity
+        style={styles.floatingStartButton}
+        onPress={startStream}
+      >
+        <Ionicons name="videocam" size={24} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 };

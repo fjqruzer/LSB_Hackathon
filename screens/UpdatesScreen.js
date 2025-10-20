@@ -148,8 +148,8 @@ const UpdatesScreen = ({ navigation }) => {
       } else if (update.type === 'payment_submitted') {
         // Navigate to PaymentApproval screen for seller
         navigation.navigate('PaymentApproval');
-      } else if (update.listingId) {
-        // Navigate to listing details
+      } else if (update.listingId && update.type !== 'live_stream_started') {
+        // Navigate to listing details (but not for live stream notifications)
         navigation.navigate('ListingDetails', {
           listing: { id: update.listingId }
         });

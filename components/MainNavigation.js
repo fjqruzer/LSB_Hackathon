@@ -392,14 +392,20 @@ const MainNavigationContent = () => {
       case 'LiveStream':
         return (
           <LiveStreamScreen 
-            navigation={{ goBack: () => setCurrentScreen('ListingDetails') }}
+            navigation={{ 
+              goBack: () => setCurrentScreen('LiveStreams'),
+              navigate: (screen, params) => setCurrentScreen(screen)
+            }}
             route={{ params: { listing: currentListing } }}
           />
         );
       case 'StreamViewer':
         return (
           <StreamViewerScreen 
-            navigation={{ goBack: () => setCurrentScreen('ListingDetails') }}
+            navigation={{ 
+              goBack: () => setCurrentScreen('LiveStreams'),
+              navigate: (screen, params) => setCurrentScreen(screen)
+            }}
             route={{ params: { stream: paymentParams?.stream } }}
           />
         );
@@ -477,6 +483,10 @@ const MainNavigationContent = () => {
     } else if (notificationData.type === 'winner_determined' && notificationData.listingId) {
       // Navigate to listing details for seller
       fetchListingAndNavigate(notificationData.listingId);
+    } else if (notificationData.type === 'live_stream_started') {
+      // Don't navigate for live stream notifications - let user stay in current screen
+      console.log('🔴 Live stream notification received, staying in current screen');
+      return;
     } else {
       setCurrentScreen('marketplace');
     }
