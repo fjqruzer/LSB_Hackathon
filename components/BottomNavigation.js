@@ -22,10 +22,14 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
   });
   
+  // Clothing icons to cycle through
+  const clothingIcons = ['shirt-outline', 'glasses-outline', 'watch-outline', 'footsteps-outline', 'bag-outline'];
+  const [currentIconIndex, setCurrentIconIndex] = useState(0);
+  
   const navItems = [
     { id: 'marketplace', icon: 'storefront-outline', label: 'Market', activeIcon: 'storefront' },
     { id: 'foryou', icon: 'sparkles-outline', label: 'For You', activeIcon: 'sparkles' },
-    { id: 'plus', icon: 'add', label: '', activeIcon: 'add' },
+    { id: 'plus', icon: clothingIcons[currentIconIndex], label: '', activeIcon: clothingIcons[currentIconIndex] },
     { id: 'people', icon: 'people-outline', label: 'People', activeIcon: 'people' },
     { id: 'profile', icon: 'person-outline', label: 'Me', activeIcon: 'person' },
   ];
@@ -35,6 +39,9 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const expandAnim = useRef(new Animated.Value(0)).current;
   const circle1Anim = useRef(new Animated.Value(0)).current;
   const circle2Anim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const rippleAnim = useRef(new Animated.Value(0)).current;
+  const iconFadeAnim = useRef(new Animated.Value(1)).current;
 
   // Start the continuous floating animation
   useEffect(() => {
@@ -58,6 +65,30 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
     startFloating();
   }, [floatAnim]);
 
+  // Icon cycling effect with fade animation
+  useEffect(() => {
+    const cycleIcon = () => {
+      // Fade out
+      Animated.timing(iconFadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        // Change icon
+        setCurrentIconIndex((prevIndex) => (prevIndex + 1) % clothingIcons.length);
+        // Fade in
+        Animated.timing(iconFadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      });
+    };
+
+    const interval = setInterval(cycleIcon, 3000); // Change icon every 3 seconds
+    return () => clearInterval(interval);
+  }, [iconFadeAnim]);
+
   // Interpolate the floating animation
   const floatingStyle = {
     transform: [
@@ -74,6 +105,30 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
   const toggleExpansion = () => {
     const toValue = isExpanded ? 0 : 1;
     setIsExpanded(!isExpanded);
+    
+    // Button press animation
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 0.85,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 300,
+        friction: 10,
+      }),
+    ]).start();
+
+    // Ripple effect
+    rippleAnim.setValue(0);
+    Animated.timing(rippleAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
     
     Animated.parallel([
       Animated.spring(expandAnim, {
@@ -222,17 +277,62 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
                 </TouchableOpacity>
               </Animated.View>
 
+              {/* Ripple effect */}
+              <Animated.View 
+                style={[
+                  styles.rippleEffect,
+                  {
+                    opacity: rippleAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0.6, 0.3, 0],
+                    }),
+                    transform: [
+                      {
+                        scale: rippleAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.8, 2],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+
               {/* Main PLUS button */}
-              <Animated.View style={[styles.addButton, floatingStyle]}>
+              <Animated.View 
+                style={[
+                  styles.addButton, 
+                  floatingStyle,
+                  {
+                    transform: [
+                      ...floatingStyle.transform,
+                      { scale: scaleAnim },
+                    ],
+                  },
+                ]}
+              >
                 <TouchableOpacity 
                   style={styles.addButtonTouchable}
                   onPress={() => handlePress(item.id)}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons 
-                    name={isExpanded ? 'close' : item.icon} 
-                    size={28} 
-                    color="white" 
-                  />
+                  <Animated.View
+                    style={{
+                      opacity: iconFadeAnim,
+                      transform: [{
+                        rotate: expandAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '135deg'],
+                        }),
+                      }],
+                    }}
+                  >
+                    <Ionicons 
+                      name={item.icon} 
+                      size={28} 
+                      color="white" 
+                    />
+                  </Animated.View>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -324,14 +424,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: -20,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowColor: '#F68652',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 15,
     ...(Platform.OS === 'android' && {
-      elevation: 8,
+      elevation: 12,
     }),
+  },
+  rippleEffect: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F68652',
+    zIndex: -1,
   },
   addButtonTouchable: {
     width: '100%',

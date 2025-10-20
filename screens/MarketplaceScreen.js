@@ -748,7 +748,6 @@ import ChatService from '../services/ChatService'
       alignItems: "center",
       paddingHorizontal: 16,
       paddingVertical: 12,
-      backgroundColor: "#DFECE2",
       ...(Platform.OS === "android" && {
         elevation: 2,
         shadowColor: "#000",
@@ -793,12 +792,32 @@ import ChatService from '../services/ChatService'
     },
     headerIcons: {
       flexDirection: "row",
+      alignItems: "center",
     },
     iconButton: {
+      padding: 4,
       marginLeft: 8,
+      position: "relative",
+    },
+    badge: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      backgroundColor: "#F68652",
+      borderRadius: 10,
+      minWidth: 18,
+      height: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 4,
+    },
+    badgeText: {
+      color: "white",
+      fontSize: 10,
+      fontFamily: "Poppins-Bold",
+      textAlign: "center",
     },
     tabScrollContainer: {
-      backgroundColor: "#DFECE2",
       maxHeight: 50,
       marginTop: -10,
     },
@@ -1042,25 +1061,6 @@ import ChatService from '../services/ChatService'
       fontSize: 10,
       color: 'white',
     },
-    badge: {
-      position: 'absolute',
-      top: -5,
-      right: -5,
-      backgroundColor: '#FF4444',
-      borderRadius: 10,
-      minWidth: 20,
-      height: 20,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 6,
-    },
-    badgeText: {
-      color: 'white',
-      fontSize: 12,
-      fontWeight: 'bold',
-      fontFamily: 'Poppins-SemiBold',
-    },
   })
   
   export default Marketplace
-  

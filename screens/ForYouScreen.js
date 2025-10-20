@@ -150,6 +150,50 @@ const ForYouScreen = ({ navigation, onNavigateToFavorites }) => {
         </View>
       </View>
 
+      {/* Title and Subtitle */}
+      <View style={[styles.subtitleContainer, { backgroundColor: colors.primary }]}>
+        <Text style={[
+          styles.pageTitle,
+          { color: colors.accent },
+          { fontFamily: fontsLoaded ? 'Poppins-Bold' : undefined }
+        ]}>For You</Text>
+        <Text style={[
+          styles.headerSubtitle, 
+          { color: colors.textSecondary },
+          { fontFamily: fontsLoaded ? 'Poppins-Regular' : undefined }
+        ]}>Personalized recommendations</Text>
+        
+        {/* Category Tabs */}
+        <View style={styles.tabContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll}>
+            <TouchableOpacity 
+              style={[styles.tab, styles.activeTab]}
+              onPress={() => {}}
+            >
+              <Text style={[styles.tabText, styles.activeTabText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                Recommended
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.tab}
+              onPress={() => {}}
+            >
+              <Text style={[styles.tabText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                Trending
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.tab}
+              onPress={() => {}}
+            >
+              <Text style={[styles.tabText, { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }]}>
+                Popular
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </View>
+
       {/* Content */}
       <ScrollView 
         style={styles.content}
@@ -197,7 +241,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#DFECE2',
     ...(Platform.OS === 'android' && {
       elevation: 2,
       shadowColor: '#000',
@@ -257,6 +300,44 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'Poppins-Bold',
     textAlign: 'center',
+  },
+  subtitleContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontFamily: 'Poppins-Bold',
+    marginBottom: 2,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+  },
+  tabContainer: {
+    backgroundColor: '#DFECE2',
+    paddingBottom: 16,
+    marginTop: 8,
+  },
+  tabScroll: {
+    paddingRight: 20,
+  },
+  tab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(131, 175, 167, 0.1)',
+  },
+  activeTab: {
+    backgroundColor: '#83AFA7',
+  },
+  tabText: {
+    fontSize: 12,
+    color: '#83AFA7',
+  },
+  activeTabText: {
+    color: 'white',
   },
   content: {
     flex: 1,

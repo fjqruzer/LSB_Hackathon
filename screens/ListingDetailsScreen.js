@@ -1368,61 +1368,55 @@ const ListingDetailsScreen = ({ navigation, route }) => {
         hidden={false}
       />
 
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.accent} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Animated.View style={[
-            styles.headerTimer,
-            timerUrgency === 'critical' && styles.timerCritical,
-            timerUrgency === 'warning' && styles.timerWarning,
-            timerUrgency === 'caution' && styles.timerCaution,
-            timerUrgency === 'expired' && styles.timerExpired,
-            timerUrgency === 'critical' && {
-              transform: [{ scale: timerPulseAnim }]
-            }
-          ]}>
-            <View style={[
-              styles.timerIconContainer,
-              timerUrgency === 'critical' && styles.timerIconCritical,
-              timerUrgency === 'warning' && styles.timerIconWarning,
-              timerUrgency === 'caution' && styles.timerIconCaution,
-              timerUrgency === 'expired' && styles.timerIconExpired
-            ]}>
-              <Ionicons 
-                name={isExpired ? "time" : "time-outline"} 
-                size={14} 
-                color={
-                  timerUrgency === 'critical' ? "#FFFFFF" :
-                  timerUrgency === 'warning' ? "#FFFFFF" :
-                  timerUrgency === 'caution' ? "#FFFFFF" :
-                  timerUrgency === 'expired' ? "#FFFFFF" :
-                  "#F68652"
-                } 
-              />
-            </View>
-            <Text style={[
-              styles.headerTimerText,
-              { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined },
-              timerUrgency === 'critical' && styles.timerTextCritical,
-              timerUrgency === 'warning' && styles.timerTextWarning,
-              timerUrgency === 'caution' && styles.timerTextCaution,
-              timerUrgency === 'expired' && styles.timerTextExpired
-            ]}>
-              {timerDisplayText}
-            </Text>
-          </Animated.View>
-        </View>
-        {!isOwnListing && (
-          <TouchableOpacity style={styles.messageButton} onPress={handleMessageSeller}>
-            <Ionicons name="chatbubble-outline" size={24} color="#83AFA7" />
-        </TouchableOpacity>
-        )}
-      </View>
-
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Overlay Header */}
+        <View style={styles.overlayHeader}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Animated.View style={[
+              styles.headerTimer,
+              timerUrgency === 'critical' && styles.timerCritical,
+              timerUrgency === 'warning' && styles.timerWarning,
+              timerUrgency === 'caution' && styles.timerCaution,
+              timerUrgency === 'expired' && styles.timerExpired,
+              timerUrgency === 'critical' && {
+                transform: [{ scale: timerPulseAnim }]
+              }
+            ]}>
+              <View style={[
+                styles.timerIconContainer,
+                timerUrgency === 'critical' && styles.timerIconCritical,
+                timerUrgency === 'warning' && styles.timerIconWarning,
+                timerUrgency === 'caution' && styles.timerIconCaution,
+                timerUrgency === 'expired' && styles.timerIconExpired
+              ]}>
+                <Ionicons 
+                  name={isExpired ? "time" : "time-outline"} 
+                  size={14} 
+                  color="#FFFFFF"
+                />
+              </View>
+              <Text style={[
+                styles.headerTimerText,
+                { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined },
+                timerUrgency === 'critical' && styles.timerTextCritical,
+                timerUrgency === 'warning' && styles.timerTextWarning,
+                timerUrgency === 'caution' && styles.timerTextCaution,
+                timerUrgency === 'expired' && styles.timerTextExpired
+              ]}>
+                {timerDisplayText}
+              </Text>
+            </Animated.View>
+          </View>
+          {!isOwnListing && (
+            <TouchableOpacity style={styles.messageButton} onPress={handleMessageSeller}>
+              <Ionicons name="chatbubble-outline" size={24} color="white" />
+          </TouchableOpacity>
+          )}
+        </View>
+
         {/* Image Carousel */}
         <View style={styles.imageContainer}>
           <PanGestureHandler
@@ -2113,10 +2107,23 @@ const styles = StyleSheet.create({
     shadowRadius: 0,
     elevation: 0,
   },
+  overlayHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    zIndex: 10,
+  },
   backButton: {
-    padding: 6,
-    borderRadius: 16,
-    backgroundColor: '#F8F9FA',
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   headerCenter: {
     flex: 1,
@@ -2173,6 +2180,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 4,
+    backgroundColor: '#F68652',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   timerIconContainer: {
     alignItems: 'center',
@@ -2180,7 +2191,7 @@ const styles = StyleSheet.create({
   },
   headerTimerText: {
     fontSize: 12,
-    color: '#666',
+    color: '#FFFFFF',
     fontWeight: '500',
     textAlign: 'center',
   },
@@ -2467,19 +2478,20 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   messageButton: {
-    padding: 6,
-    borderRadius: 16,
-    backgroundColor: '#F8F9FA',
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   content: {
     flex: 1,
   },
   imageContainer: {
-    height: 280,
+    height: 350,
     backgroundColor: '#F8F9FA',
     position: 'relative',
     borderRadius: 0,
     overflow: 'hidden',
+    marginTop: -60,
   },
   imageWrapper: {
     width: '100%',

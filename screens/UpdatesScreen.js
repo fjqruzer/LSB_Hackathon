@@ -9,7 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 const UpdatesScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { notifications, unreadCount, markAsRead } = useNotificationListener();
-  const { isDarkMode, colors } = useTheme();
+  const { colors } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const isMountedRef = useRef(true);
   
@@ -199,10 +199,10 @@ const UpdatesScreen = ({ navigation }) => {
   return (
     <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style={isDarkMode ? "light" : "dark"} 
+        style="dark" 
         backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        barStyle="dark-content"
         animated={true}
         hidden={false}
       />

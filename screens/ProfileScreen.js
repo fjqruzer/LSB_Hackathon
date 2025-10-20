@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useNotificationListener } from '../contexts/NotificationListenerContext';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToCloudinary } from '../config/cloudinary';
 import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -16,7 +17,8 @@ import StandardModal from '../components/StandardModal';
 const ProfileScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user, logout, getUserProfile, forceUpdatePushToken } = useAuth();
-  const { isDarkMode, colors } = useTheme();
+  const { colors } = useTheme();
+  const { unreadCount: notificationUnreadCount } = useNotificationListener();
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -111,10 +113,20 @@ const ProfileScreen = ({ navigation }) => {
     return null;
   }
 
+  const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
+
   // Show loading state
   if (loading || uploadingImage) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar 
+          style="dark" 
+          backgroundColor={colors.primary}
+          translucent={Platform.OS === "android"}
+          barStyle="dark-content"
+          animated={true}
+          hidden={false}
+        />
         <Text style={{ fontFamily: 'Poppins-Regular', color: '#666' }}>
           {uploadingImage ? 'Uploading profile picture...' : 'Loading profile...'}
         </Text>
@@ -125,7 +137,15 @@ const ProfileScreen = ({ navigation }) => {
   // Show error state if no user
   if (!user) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar 
+          style="dark" 
+          backgroundColor={colors.primary}
+          translucent={Platform.OS === "android"}
+          barStyle="dark-content"
+          animated={true}
+          hidden={false}
+        />
         <Text style={{ fontFamily: 'Poppins-Regular', color: '#666' }}>Please log in to view your profile</Text>
       </View>
     );
@@ -315,8 +335,6 @@ const ProfileScreen = ({ navigation }) => {
     { icon: 'lock-closed-outline', title: 'My Password', subtitle: 'Change password', color: '#FF5722' },
   ];
 
-  const topPadding = insets.top || (Platform.OS === "ios" ? 44 : 0);
-
   const handleMenuPress = (title) => {
     if (title === 'My Shop') {
       navigation.navigate('MyShop');
@@ -343,23 +361,53 @@ const ProfileScreen = ({ navigation }) => {
   return (
     <View style={[styles.container, { paddingTop: topPadding, backgroundColor: colors.primary }]}>
       <StatusBar 
-        style={isDarkMode ? "light" : "dark"} 
+        style="dark" 
         backgroundColor={colors.primary}
         translucent={Platform.OS === "android"}
-        barStyle={isDarkMode ? "light-content" : "dark-content"}
+        barStyle="dark-content"
         animated={true}
         hidden={false}
       />
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <Text style={[styles.headerTitle, { color: colors.accent }]}>Profile</Text>
-        <TouchableOpacity 
-          style={styles.editButton}
-          onPress={() => navigation.navigate('EditProfile')}
-        >
-          <Ionicons name="create-outline" size={24} color={colors.accent} />
-        </TouchableOpacity>
+        <Image
+          source={{
+            uri: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-uzcx2rUT6ee8nzIBhYHxhd0BdCkXUF.png",
+          }}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: colors.accent }]}>Profile</Text>
+        </View>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('updates')}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#83AFA7" />
+            {notificationUnreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('MyFavorites')}
+          >
+            <Ionicons name="heart-outline" size={24} color="#83AFA7" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('messages')}
+          >
+            <Ionicons name="chatbubble-outline" size={24} color="#83AFA7" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Content */}
@@ -533,17 +581,57 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 12,
+    ...(Platform.OS === 'android' && {
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+    }),
+  },
+  logo: {
+    width: 40,
+    height: 30,
+    marginRight: 12,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontFamily: 'Poppins-Bold',
+    color: '#83AFA7',
   },
-  editButton: {
-    padding: 8,
+  headerIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 4,
+    marginLeft: 8,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#F68652',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontFamily: 'Poppins-Bold',
+    textAlign: 'center',
   },
   content: {
     flex: 1,
