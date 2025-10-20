@@ -61,15 +61,10 @@ class NotificationManager {
       const docRef = await addDoc(collection(db, 'notifications'), notification);
       console.log('✅ Notification stored in Firestore:', docRef.id);
       
-      // Only send push notification if app is in background/closed
-      // This prevents double notifications (in-app + push)
-      const appState = AppState.currentState;
-      if (appState === 'background' || appState === 'inactive') {
-        console.log('📱 App is in background/inactive, sending push notification');
-        await this.sendPushNotificationToUser(recipientId, title, body, data);
-      } else {
-        console.log('📱 App is in foreground, skipping push notification (in-app notification will show)');
-      }
+      // Always send push notification regardless of app state
+      // This ensures notifications are sent even when app is in foreground
+      console.log('📱 Sending push notification to user:', recipientId);
+      await this.sendPushNotificationToUser(recipientId, title, body, data);
       
       return docRef.id;
     } catch (error) {

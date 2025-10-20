@@ -81,6 +81,10 @@ class ExpirationCheckService {
 
   // Check for expired listings
   async checkExpiredListings() {
+    console.log('🔍 ExpirationCheckService.checkExpiredListings() called');
+    console.log('⏰ Current time:', new Date().toISOString());
+    console.log('📊 Service status:', this.getStatus());
+    
     // Prevent concurrent processing
     if (this.isProcessing) {
       console.log('⏭️ Expiration check already in progress, skipping...');
@@ -92,6 +96,7 @@ class ExpirationCheckService {
     
     try {
       console.log('🔍 Starting expiration check...');
+      console.log('📊 Processed listings cache size:', this.processedListings.size);
       
       // Pass the cache by reference so it can be modified
       const expiredCount = await ExpirationNotificationService.checkExpiredListings(this.processedListings);
@@ -132,6 +137,12 @@ class ExpirationCheckService {
       checkInterval: this.checkInterval,
       intervalId: this.intervalId
     };
+  }
+
+  // Manual test function to trigger expiration check
+  async testExpirationCheck() {
+    console.log('🧪 Manual test: Triggering expiration check...');
+    await this.checkExpiredListings();
   }
 }
 

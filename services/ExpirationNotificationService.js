@@ -13,8 +13,10 @@ class ExpirationNotificationService {
   async checkExpiredListings(processedListings = new Set()) {
     try {
       console.log('🔍 Checking for expired listings...');
+      console.log('⏰ Current time:', new Date().toISOString());
       const now = new Date();
       const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)); // Process listings that expired within the last 24 hours
+      console.log('⏰ Checking listings expired after:', twentyFourHoursAgo.toISOString());
       
       const listingsRef = collection(db, 'listings');
       
@@ -27,16 +29,25 @@ class ExpirationNotificationService {
       const querySnapshot = await getDocs(q);
       const expiredListings = [];
       
+      console.log(`📊 Found ${querySnapshot.size} active listings to check`);
+      
       querySnapshot.forEach((doc) => {
         const listing = { id: doc.id, ...doc.data() };
         
+        console.log(`🔍 Checking listing: ${listing.id} (${listing.title})`);
+        console.log(`🔍 Listing endDateTime:`, listing.endDateTime);
+        console.log(`🔍 Listing status:`, listing.status);
+        console.log(`🔍 Listing lockedBy:`, listing.lockedBy);
+        
         // Skip if already processed
         if (processedListings.has(listing.id)) {
+          console.log(`⏭️ Listing ${listing.id} already processed, skipping`);
           return;
         }
         
         // Skip if currently being processed
         if (this.processingListings.has(listing.id)) {
+          console.log(`⏭️ Listing ${listing.id} currently being processed, skipping`);
           return;
         }
         
@@ -57,240 +68,137 @@ class ExpirationNotificationService {
             endTime = new Date(listing.endDateTime);
           }
           
-          // Process listings that expired within the last 24 hours to catch missed notifications
-          if (!isNaN(endTime.getTime()) && endTime <= now && endTime >= twentyFourHoursAgo) {
+          console.log(`⏰ Listing ${listing.id} end time: ${endTime.toISOString()}`);
+          console.log(`⏰ Current time: ${now.toISOString()}`);
+          console.log(`⏰ 24 hours ago: ${twentyFourHoursAgo.toISOString()}`);
+          console.log(`⏰ Is expired: ${endTime <= now}`);
+          console.log(`⏰ Within 24 hours: ${endTime >= twentyFourHoursAgo}`);
+          
+          // Check if listing has expired (regardless of when it expired)
+          if (!isNaN(endTime.getTime()) && endTime <= now) {
             // Skip if listing is already locked (handled by lock action)
             if (listing.status === 'locked' || listing.lockedBy) {
               console.log(`⏭️ Skipping locked listing ${listing.id} - already handled by lock action`);
             } else {
-              console.log(`⏰ Found recently expired listing: ${listing.id} (expired at: ${endTime.toISOString()})`);
+              console.log(`⏰ Found expired listing: ${listing.id} (expired at: ${endTime.toISOString()})`);
               expiredListings.push(listing);
             }
-          } else if (!isNaN(endTime.getTime()) && endTime < twentyFourHoursAgo) {
-            console.log(`⏭️ Skipping old expired listing: ${listing.id} (expired at: ${endTime.toISOString()})`);
+          } else if (!isNaN(endTime.getTime()) && endTime > now) {
+            console.log(`⏭️ Listing ${listing.id} not yet expired (expires at: ${endTime.toISOString()})`);
           }
         }
       });
       
-      console.log(`📊 Found ${expiredListings.length} recently expired listings to process`);
+      console.log(`📊 Found ${expiredListings.length} expired listings to process`);
       
       // Process each expired listing
       for (const listing of expiredListings) {
         // Mark as processed before processing
         processedListings.add(listing.id);
+        this.processingListings.add(listing.id);
         
-        await this.processExpiredListing(listing);
+        try {
+          console.log(`🔄 Processing expired listing: ${listing.id}`);
+          
+          // Get all actions for this listing
+          const actions = await this.getListingActions(listing.id);
+          
+          if (actions.length > 0) {
+            try {
+              // Sort actions by priority to determine winner
+              const sortedActions = this.sortActionsByPriority(actions);
+              const winner = sortedActions[0];
+              
+              console.log(`🏆 Winner determined for listing ${listing.id}: ${winner.userName} with ${winner.action} action`);
+              
+              // Update listing status to expired with winner
+              await this.updateListingStatus(listing.id, 'expired', winner);
+              console.log(`✅ Listing status updated successfully`);
+              
+              // Notify the winner to proceed to payment
+              console.log(`🔔 Notifying winner to proceed to payment...`);
+              const winnerNotificationId = await this.notifyWinnerToPay(listing, winner);
+              if (winnerNotificationId) {
+                console.log(`✅ Winner notification sent successfully: ${winnerNotificationId}`);
+              } else {
+                console.log(`⚠️ Winner notification failed or was skipped`);
+              }
+              
+              // Notify seller about the winner
+              console.log(`🔔 Notifying seller about winner...`);
+              const sellerNotificationId = await this.notifySellerAboutWinner(listing, winner);
+              if (sellerNotificationId) {
+                console.log(`✅ Seller notification sent successfully: ${sellerNotificationId}`);
+              } else {
+                console.log(`⚠️ Seller notification failed or was skipped`);
+              }
+              
+              // Notify all participants about the expiration
+              console.log(`🔔 Notifying all participants about expiration...`);
+              await this.notifyAllParticipants(listing, winner);
+              console.log(`✅ Participant notifications sent`);
+              
+              // Create activity log
+              console.log(`📝 Creating activity log...`);
+              await this.createActivityLog(listing, winner);
+              console.log(`✅ Activity log created`);
+              
+              console.log(`🎉 Successfully processed expired listing ${listing.id} with winner ${winner.userName}`);
+              
+            } catch (processingError) {
+              console.error(`❌ Error processing expired listing ${listing.id} with winner:`, processingError);
+              // Don't re-throw here to avoid breaking the whole process
+            }
+          } else {
+            console.log(`📭 No winner found for listing ${listing.id}`);
+            
+            try {
+              // No winner found, update status and notify seller
+              console.log(`📝 Updating listing status to expired (no winner)...`);
+              await this.updateListingStatus(listing.id, 'expired');
+              console.log(`✅ Listing status updated successfully`);
+              
+              // Notify seller about no winner
+              console.log(`🔔 Notifying seller about no winner...`);
+              await this.notifySellerNoWinner(listing);
+              console.log(`✅ No winner notification sent to seller`);
+              
+              // Notify all viewers that listing expired with no winner
+              console.log(`🔔 Notifying all viewers about no winner...`);
+              await this.notifyAllViewersNoWinner(listing);
+              console.log(`✅ No winner notifications sent to viewers`);
+              
+              console.log(`📭 Successfully processed expired listing ${listing.id} with no winner`);
+              
+            } catch (noWinnerError) {
+              console.error(`❌ Error processing expired listing ${listing.id} with no winner:`, noWinnerError);
+              // Don't re-throw here to avoid breaking the whole process
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error processing expired listing ${listing.id}:`, error);
+        } finally {
+          // Remove from processing set
+          this.processingListings.delete(listing.id);
+        }
       }
       
+      console.log(`✅ Expiration check completed. Processed ${expiredListings.length} expired listings`);
       return expiredListings.length;
+      
     } catch (error) {
-      console.error('❌ Error checking expired listings:', error);
+      console.error('❌ Error in expiration check:', error);
       throw error;
     }
   }
 
-  // Process a single expired listing
-  async processExpiredListing(listing) {
+  // Get all actions for a listing
+  async getListingActions(listingId) {
     try {
-      // Check if this listing is already being processed
-      if (this.processingListings.has(listing.id)) {
-        return;
-      }
-      
-      // Mark as being processed
-      this.processingListings.add(listing.id);
-      
-      // Fetch the latest listing data to check current status
-      const { doc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
-      const listingRef = doc(db, 'listings', listing.id);
-      const listingSnapshot = await getDoc(listingRef);
-      
-      if (!listingSnapshot.exists()) {
-        console.log(`⏭️ Listing ${listing.id} no longer exists`);
-        this.processingListings.delete(listing.id);
-        return;
-      }
-      
-      const currentListing = listingSnapshot.data();
-      
-      // Skip if listing is already locked (handled by lock action)
-      if (currentListing.status === 'locked' || currentListing.lockedBy) {
-        console.log(`⏭️ Skipping locked listing ${listing.id} - already handled by lock action (status: ${currentListing.status}, lockedBy: ${currentListing.lockedBy})`);
-        this.processingListings.delete(listing.id);
-        return;
-      }
-      
-      // Skip if listing is already expired (already processed)
-      if (currentListing.status === 'expired') {
-        console.log(`⏭️ Skipping listing ${listing.id} - already expired and processed (status: ${currentListing.status})`);
-        this.processingListings.delete(listing.id);
-        return;
-      }
-      
-      // Skip if listing has been sold (already completed)
-      if (currentListing.status === 'sold') {
-        console.log(`⏭️ Skipping listing ${listing.id} - already sold (status: ${currentListing.status})`);
-        this.processingListings.delete(listing.id);
-        return;
-      }
-      
-      // Simple check: look for any expiration-related activity logs (only check for the most important ones)
-      const expirationActivityQuery = query(
-        collection(db, 'activityLogs'),
-        where('listingId', '==', listing.id),
-        where('action', 'in', ['Listing Expired - Winner', 'Listing Expired - No Winner'])
-      );
-      
-      const expirationActivitySnapshot = await getDocs(expirationActivityQuery);
-      if (!expirationActivitySnapshot.empty) {
-        console.log(`⏭️ Skipping listing ${listing.id} - expiration already processed (found activity logs)`);
-        this.processingListings.delete(listing.id);
-        return; // Skip processing if expiration was already handled
-      }
-      
-      // Check for recent lock actions on this listing (within last 24 hours)
-      const lockActivityQuery = query(
-        collection(db, 'activityLogs'),
-        where('listingId', '==', listing.id),
-        where('action', '==', 'Locked')
-      );
-      
-      const lockActivitySnapshot = await getDocs(lockActivityQuery);
-      if (!lockActivitySnapshot.empty) {
-        // Check if lock action was recent (within 24 hours)
-        const recentLockActions = lockActivitySnapshot.docs.filter(doc => {
-          const data = doc.data();
-          const timestamp = data.timestamp?.toDate();
-          const twentyFourHoursAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
-          return timestamp && timestamp >= twentyFourHoursAgo;
-        });
-        
-        if (recentLockActions.length > 0) {
-          console.log(`⏭️ Skipping listing ${listing.id} - recently locked by user action`);
-        this.processingListings.delete(listing.id);
-          return; // Skip processing if listing was recently locked by user action
-        }
-      }
-      
-      // Additional check: if listing has lockedAt timestamp, it was locked by user action
-      if (currentListing.lockedAt) {
-        console.log(`⏭️ Skipping listing ${listing.id} - has lockedAt timestamp (user action)`);
-        this.processingListings.delete(listing.id);
-        return;
-      }
-      
-      // Determine the winner based on action type
-      console.log(`🎯 Determining winner for listing ${listing.id}...`);
-      const winner = await this.determineWinner(currentListing);
-      
-      if (winner && winner.userId && winner.userName) {
-        console.log(`🏆 Winner found: ${winner.userName} (${winner.userId}) with action: ${winner.action}`);
-        
-        try {
-        // Update listing status to expired with winner info
-          console.log(`📝 Updating listing status to expired with winner info...`);
-        await this.updateListingStatus(listing.id, 'expired', winner);
-          console.log(`✅ Listing status updated successfully`);
-          
-        // Notify the winner to proceed to payment
-          console.log(`🔔 Notifying winner to proceed to payment...`);
-          const winnerNotificationId = await this.notifyWinnerToPay(currentListing, winner);
-          if (winnerNotificationId) {
-            console.log(`✅ Winner notification sent successfully: ${winnerNotificationId}`);
-          } else {
-            console.log(`⚠️ Winner notification failed or was skipped`);
-          }
-          
-        // Notify seller about the winner
-          console.log(`🔔 Notifying seller about winner...`);
-          const sellerNotificationId = await this.notifySellerAboutWinner(currentListing, winner);
-          if (sellerNotificationId) {
-            console.log(`✅ Seller notification sent successfully: ${sellerNotificationId}`);
-          } else {
-            console.log(`⚠️ Seller notification failed or was skipped`);
-          }
-          
-        // Notify all participants about the expiration
-          console.log(`🔔 Notifying all participants about expiration...`);
-        await this.notifyAllParticipants(currentListing, winner);
-          console.log(`✅ Participant notifications sent`);
-          
-        // Create activity log
-          console.log(`📝 Creating activity log...`);
-        await this.createActivityLog(currentListing, winner);
-          console.log(`✅ Activity log created`);
-          
-          console.log(`🎉 Successfully processed expired listing ${listing.id} with winner ${winner.userName}`);
-          
-        } catch (processingError) {
-          console.error(`❌ Error processing expired listing ${listing.id} with winner:`, processingError);
-          // Don't re-throw here to avoid breaking the whole process
-        }
-        
-        } else {
-        console.log(`📭 No winner found for listing ${listing.id}`);
-        
-        try {
-        // No winner found, update status and notify seller
-          console.log(`📝 Updating listing status to expired (no winner)...`);
-        await this.updateListingStatus(listing.id, 'expired');
-          console.log(`✅ Listing status updated successfully`);
-          
-        // Notify seller about no winner
-          console.log(`🔔 Notifying seller about no winner...`);
-        await this.notifySellerNoWinner(currentListing);
-          console.log(`✅ No winner notification sent to seller`);
-          
-        // Notify all viewers that listing expired with no winner
-          console.log(`🔔 Notifying all viewers about no winner...`);
-        await this.notifyAllViewersNoWinner(currentListing);
-          console.log(`✅ No winner notifications sent to viewers`);
-          
-          console.log(`🎉 Successfully processed expired listing ${listing.id} with no winner`);
-          
-        } catch (processingError) {
-          console.error(`❌ Error processing expired listing ${listing.id} with no winner:`, processingError);
-          // Don't re-throw here to avoid breaking the whole process
-        }
-        }
-      
-      } catch (error) {
-      console.error(`❌ ERROR PROCESSING EXPIRED LISTING: ${listing.id}`);
-      console.error(`❌ Error details:`, error);
-    } finally {
-      // Always remove from processing list
-      this.processingListings.delete(listing.id);
-    }
-  }
-
-  // Update listing status
-  async updateListingStatus(listingId, status, winner = null) {
-    const listingRef = doc(db, 'listings', listingId);
-    const updateData = {
-      status,
-      expiredAt: serverTimestamp(),
-      lastUpdated: serverTimestamp(),
-    };
-    
-    if (winner && winner.userId && winner.userName) {
-      updateData.winnerId = winner.userId;
-      updateData.winnerName = winner.userName;
-      updateData.winnerAction = winner.action;
-      updateData.winnerAmount = this.extractAmountFromDetails(winner.details);
-    }
-    
-    await updateDoc(listingRef, updateData);
-  }
-
-  // Determine the winner based on the highest action
-  async determineWinner(listing) {
-    try {
-      // Get all actions for this listing
       const actionsRef = collection(db, 'activityLogs');
       const actionsQuery = query(
         actionsRef,
-        where('listingId', '==', listing.id),
+        where('listingId', '==', listingId),
         where('action', 'in', ['Mined', 'Stole', 'Locked', 'Bid'])
       );
       
@@ -298,36 +206,26 @@ class ExpirationNotificationService {
       const actions = [];
       
       actionsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        actions.push({ id: doc.id, ...data });
+        actions.push({ id: doc.id, ...doc.data() });
       });
       
-      if (actions.length === 0) {
-        return null; // No actions performed
-      }
-      
-      // Sort actions by priority and amount
-      const sortedActions = this.sortActionsByPriority(actions);
-      const winner = sortedActions[0];
-      
-      // Validate winner data
-      if (!winner.userId || !winner.userName) {
-        return null;
-      }
-      
-      return winner;
+      return actions;
     } catch (error) {
-      console.error('❌ Error determining winner:', error);
-      return null;
+      console.error('❌ Error getting listing actions:', error);
+      return [];
     }
   }
 
-  // Sort actions by priority (Lock > Steal > Mine > Bid)
+  // Sort actions by priority to determine winner
   sortActionsByPriority(actions) {
-    const priorityOrder = { 'Locked': 1, 'Stole': 2, 'Mined': 3, 'Bid': 4 };
+    const priorityOrder = {
+      'Locked': 1,
+      'Mined': 2,
+      'Stole': 3,
+      'Bid': 4
+    };
     
     return actions.sort((a, b) => {
-      // First sort by action priority
       const priorityA = priorityOrder[a.action] || 999;
       const priorityB = priorityOrder[b.action] || 999;
       
@@ -335,12 +233,35 @@ class ExpirationNotificationService {
         return priorityA - priorityB;
       }
       
-      // If same action type, sort by amount (highest first)
-      const amountA = parseFloat(a.details?.match(/₱(\d+)/)?.[1] || 0);
-      const amountB = parseFloat(b.details?.match(/₱(\d+)/)?.[1] || 0);
-      
-      return amountB - amountA;
+      // If same priority, sort by timestamp (earliest first)
+      const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+      const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+      return timeA - timeB;
     });
+  }
+
+  // Update listing status
+  async updateListingStatus(listingId, status, winner = null) {
+    try {
+      const listingRef = doc(db, 'listings', listingId);
+      const updateData = {
+        status: status,
+        lastUpdated: serverTimestamp()
+      };
+      
+      if (winner) {
+        updateData.winnerId = winner.userId;
+        updateData.winnerName = winner.userName;
+        updateData.winnerAction = winner.action;
+        updateData.expiredAt = serverTimestamp();
+      }
+      
+      await updateDoc(listingRef, updateData);
+      console.log(`✅ Listing ${listingId} status updated to ${status}`);
+    } catch (error) {
+      console.error('❌ Error updating listing status:', error);
+      throw error;
+    }
   }
 
   // Notify winner to proceed to payment
@@ -393,6 +314,10 @@ class ExpirationNotificationService {
       };
       
       console.log(`📬 Creating payment notification for winner ${winner.userId}`);
+      console.log(`📬 Notification title: ${title}`);
+      console.log(`📬 Notification body: ${body}`);
+      console.log(`📬 Notification data:`, notificationData);
+      
       const notificationId = await NotificationManager.createNotification(
         winner.userId,
         title,
@@ -402,27 +327,27 @@ class ExpirationNotificationService {
       
       if (notificationId) {
         console.log(`✅ Payment notification created successfully: ${notificationId}`);
-      
-      // Start payment timeout for the winner (this will create the payment record)
+        
+        // Start payment timeout for the winner (this will create the payment record)
         try {
-      await PaymentTimeoutService.startPaymentTimeout(
-        listing.id,
-        winner.userId,
-        winner.action,
-        this.extractAmountFromDetails(winner.details)
-      );
+          await PaymentTimeoutService.startPaymentTimeout(
+            listing.id,
+            winner.userId,
+            winner.action,
+            this.extractAmountFromDetails(winner.details)
+          );
           console.log(`✅ Payment timeout started for winner ${winner.userId}`);
         } catch (timeoutError) {
           console.error('❌ Error starting payment timeout:', timeoutError);
           // Don't fail the whole process if timeout service fails
         }
       } else {
-        console.log(`⚠️ Notification creation returned null for winner ${winner.userId}`);
+        console.log(`❌ Payment notification creation failed for winner ${winner.userId}`);
       }
       
       return notificationId;
       
-      } catch (error) {
+    } catch (error) {
       console.error('❌ Error notifying winner:', error);
       console.error('❌ Error details:', {
         message: error.message,
@@ -496,7 +421,7 @@ class ExpirationNotificationService {
       
       return notificationId;
       
-      } catch (error) {
+    } catch (error) {
       console.error('❌ Error notifying seller:', error);
       console.error('❌ Error details:', {
         message: error.message,
@@ -589,7 +514,7 @@ class ExpirationNotificationService {
         );
       }
       
-      } catch (error) {
+    } catch (error) {
       console.error('❌ Error notifying participants:', error);
       console.error('❌ Error details:', {
         message: error.message,
@@ -684,28 +609,6 @@ class ExpirationNotificationService {
     }
   }
 
-  // Get push tokens for multiple users
-  async getUserPushTokens(userIds) {
-    try {
-      const tokens = [];
-      
-      for (const userId of userIds) {
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          if (userData.pushToken) {
-            tokens.push(userData.pushToken);
-          }
-        }
-      }
-      
-      return tokens;
-    } catch (error) {
-      console.error('❌ Error getting user push tokens:', error);
-      return [];
-    }
-  }
-
   // Notify seller if no winner
   async notifySellerNoWinner(listing) {
     try {
@@ -775,6 +678,7 @@ class ExpirationNotificationService {
           const createdAt = data.createdAt?.toDate();
           return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
         });
+        
         if (recentNotifications.length > 0) {
           console.log(`⏭️ Recent notification already exists for user ${userId} and listing ${listing.id}`);
           continue;
@@ -819,7 +723,6 @@ class ExpirationNotificationService {
       console.error('❌ Error creating activity log:', error);
     }
   }
-
 
   // Extract amount from action details
   extractAmountFromDetails(details) {
