@@ -14,7 +14,7 @@ class ExpirationNotificationService {
     try {
       console.log('🔍 Checking for expired listings...');
       const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000)); // Only process listings that expired within the last hour
+      const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000)); // Process listings that expired within the last 24 hours
       
       const listingsRef = collection(db, 'listings');
       
@@ -57,8 +57,8 @@ class ExpirationNotificationService {
             endTime = new Date(listing.endDateTime);
           }
           
-          // Only process listings that expired within the last hour to avoid processing old expired listings
-          if (!isNaN(endTime.getTime()) && endTime <= now && endTime >= oneHourAgo) {
+          // Process listings that expired within the last 24 hours to catch missed notifications
+          if (!isNaN(endTime.getTime()) && endTime <= now && endTime >= twentyFourHoursAgo) {
             // Skip if listing is already locked (handled by lock action)
             if (listing.status === 'locked' || listing.lockedBy) {
               console.log(`⏭️ Skipping locked listing ${listing.id} - already handled by lock action`);
@@ -66,7 +66,7 @@ class ExpirationNotificationService {
               console.log(`⏰ Found recently expired listing: ${listing.id} (expired at: ${endTime.toISOString()})`);
               expiredListings.push(listing);
             }
-          } else if (!isNaN(endTime.getTime()) && endTime < oneHourAgo) {
+          } else if (!isNaN(endTime.getTime()) && endTime < twentyFourHoursAgo) {
             console.log(`⏭️ Skipping old expired listing: ${listing.id} (expired at: ${endTime.toISOString()})`);
           }
         }
@@ -135,40 +135,11 @@ class ExpirationNotificationService {
         return;
       }
       
-      // Double-check if this listing has already been processed by looking for activity logs
-      const activityQuery = query(
-        collection(db, 'activityLogs'),
-        where('listingId', '==', listing.id),
-        where('action', '==', 'Listing Expired - Winner')
-      );
-      
-      const activitySnapshot = await getDocs(activityQuery);
-      if (!activitySnapshot.empty) {
-        this.processingListings.delete(listing.id);
-        return; // Skip processing if already done
-      }
-      
-      // Additional check: look for any existing notifications for this listing
-      // Note: This check is less reliable since users can delete notifications
-      // We rely more on activity logs for duplicate prevention
-      const notificationQuery = query(
-        collection(db, 'notifications'),
-        where('data.listingId', '==', listing.id),
-        where('data.type', 'in', ['payment_required', 'winner_determined', 'listing_expired_lost'])
-      );
-      
-      const notificationSnapshot = await getDocs(notificationQuery);
-      if (!notificationSnapshot.empty) {
-        console.log(`⏭️ Skipping listing ${listing.id} - notifications already exist`);
-        this.processingListings.delete(listing.id);
-        return; // Skip processing if notifications already exist
-      }
-      
-      // More reliable check: look for any expiration-related activity logs
+      // Simple check: look for any expiration-related activity logs (only check for the most important ones)
       const expirationActivityQuery = query(
         collection(db, 'activityLogs'),
         where('listingId', '==', listing.id),
-        where('action', 'in', ['Listing Expired - Winner', 'Listing Expired - No Winner', 'Winner Determined', 'Payment Required'])
+        where('action', 'in', ['Listing Expired - Winner', 'Listing Expired - No Winner'])
       );
       
       const expirationActivitySnapshot = await getDocs(expirationActivityQuery);
@@ -178,21 +149,7 @@ class ExpirationNotificationService {
         return; // Skip processing if expiration was already handled
       }
       
-      // Additional check: look for any processing-related activity logs
-      const processingActivityQuery = query(
-        collection(db, 'activityLogs'),
-        where('listingId', '==', listing.id),
-        where('action', 'in', ['Lock Action - Payment Required', 'Payment Submitted', 'Payment Approved', 'Payment Rejected', 'Transaction Completed'])
-      );
-      
-      const processingActivitySnapshot = await getDocs(processingActivityQuery);
-      if (!processingActivitySnapshot.empty) {
-        console.log(`⏭️ Skipping listing ${listing.id} - already being processed or completed (found processing activity logs)`);
-        this.processingListings.delete(listing.id);
-        return; // Skip processing if listing is already being processed or completed
-      }
-      
-      // Check for recent lock actions on this listing
+      // Check for recent lock actions on this listing (within last 24 hours)
       const lockActivityQuery = query(
         collection(db, 'activityLogs'),
         where('listingId', '==', listing.id),
@@ -201,9 +158,19 @@ class ExpirationNotificationService {
       
       const lockActivitySnapshot = await getDocs(lockActivityQuery);
       if (!lockActivitySnapshot.empty) {
-        console.log(`⏭️ Skipping listing ${listing.id} - already locked by user action`);
+        // Check if lock action was recent (within 24 hours)
+        const recentLockActions = lockActivitySnapshot.docs.filter(doc => {
+          const data = doc.data();
+          const timestamp = data.timestamp?.toDate();
+          const twentyFourHoursAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+          return timestamp && timestamp >= twentyFourHoursAgo;
+        });
+        
+        if (recentLockActions.length > 0) {
+          console.log(`⏭️ Skipping listing ${listing.id} - recently locked by user action`);
         this.processingListings.delete(listing.id);
-        return; // Skip processing if listing was locked by user action
+          return; // Skip processing if listing was recently locked by user action
+        }
       }
       
       // Additional check: if listing has lockedAt timestamp, it was locked by user action
@@ -214,26 +181,78 @@ class ExpirationNotificationService {
       }
       
       // Determine the winner based on action type
+      console.log(`🎯 Determining winner for listing ${listing.id}...`);
       const winner = await this.determineWinner(currentListing);
       
       if (winner && winner.userId && winner.userName) {
+        console.log(`🏆 Winner found: ${winner.userName} (${winner.userId}) with action: ${winner.action}`);
+        
+        try {
         // Update listing status to expired with winner info
+          console.log(`📝 Updating listing status to expired with winner info...`);
         await this.updateListingStatus(listing.id, 'expired', winner);
+          console.log(`✅ Listing status updated successfully`);
+          
         // Notify the winner to proceed to payment
-        await this.notifyWinnerToPay(currentListing, winner);
+          console.log(`🔔 Notifying winner to proceed to payment...`);
+          const winnerNotificationId = await this.notifyWinnerToPay(currentListing, winner);
+          if (winnerNotificationId) {
+            console.log(`✅ Winner notification sent successfully: ${winnerNotificationId}`);
+          } else {
+            console.log(`⚠️ Winner notification failed or was skipped`);
+          }
+          
         // Notify seller about the winner
-        await this.notifySellerAboutWinner(currentListing, winner);
+          console.log(`🔔 Notifying seller about winner...`);
+          const sellerNotificationId = await this.notifySellerAboutWinner(currentListing, winner);
+          if (sellerNotificationId) {
+            console.log(`✅ Seller notification sent successfully: ${sellerNotificationId}`);
+          } else {
+            console.log(`⚠️ Seller notification failed or was skipped`);
+          }
+          
         // Notify all participants about the expiration
+          console.log(`🔔 Notifying all participants about expiration...`);
         await this.notifyAllParticipants(currentListing, winner);
+          console.log(`✅ Participant notifications sent`);
+          
         // Create activity log
+          console.log(`📝 Creating activity log...`);
         await this.createActivityLog(currentListing, winner);
+          console.log(`✅ Activity log created`);
+          
+          console.log(`🎉 Successfully processed expired listing ${listing.id} with winner ${winner.userName}`);
+          
+        } catch (processingError) {
+          console.error(`❌ Error processing expired listing ${listing.id} with winner:`, processingError);
+          // Don't re-throw here to avoid breaking the whole process
+        }
+        
         } else {
+        console.log(`📭 No winner found for listing ${listing.id}`);
+        
+        try {
         // No winner found, update status and notify seller
+          console.log(`📝 Updating listing status to expired (no winner)...`);
         await this.updateListingStatus(listing.id, 'expired');
+          console.log(`✅ Listing status updated successfully`);
+          
         // Notify seller about no winner
+          console.log(`🔔 Notifying seller about no winner...`);
         await this.notifySellerNoWinner(currentListing);
+          console.log(`✅ No winner notification sent to seller`);
+          
         // Notify all viewers that listing expired with no winner
+          console.log(`🔔 Notifying all viewers about no winner...`);
         await this.notifyAllViewersNoWinner(currentListing);
+          console.log(`✅ No winner notifications sent to viewers`);
+          
+          console.log(`🎉 Successfully processed expired listing ${listing.id} with no winner`);
+          
+        } catch (processingError) {
+          console.error(`❌ Error processing expired listing ${listing.id} with no winner:`, processingError);
+          // Don't re-throw here to avoid breaking the whole process
+        }
         }
       
       } catch (error) {
@@ -329,11 +348,22 @@ class ExpirationNotificationService {
     try {
       console.log(`🔔 Notifying winner ${winner.userId} for listing ${listing.id}`);
       
+      // Validate inputs
+      if (!winner || !winner.userId) {
+        console.error('❌ Invalid winner data:', winner);
+        return;
+      }
+      
+      if (!listing || !listing.id) {
+        console.error('❌ Invalid listing data:', listing);
+        return;
+      }
+      
       const title = `🎉 You Won! Payment Required`;
       const body = `Congratulations! You won "${listing.title}" with ${winner.action} action. Please submit your payment proof to complete the purchase.`;
       
-      // Check if notification already exists (simplified query to avoid index requirement)
-      const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+      // Simplified duplicate check - only check for very recent notifications (within 5 minutes)
+      const fiveMinutesAgo = new Date(Date.now() - (5 * 60 * 1000));
       const existingNotificationQuery = query(
         collection(db, 'notifications'),
         where('recipientId', '==', winner.userId),
@@ -345,32 +375,12 @@ class ExpirationNotificationService {
       const recentNotifications = existingSnapshot.docs.filter(doc => {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate();
-        return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
+        return createdAt && createdAt >= fiveMinutesAgo && data.data?.listingId === listing.id;
       });
       
       if (recentNotifications.length > 0) {
-        console.log(`⏭️ Recent notification already exists for winner ${winner.userId} and listing ${listing.id}`);
-        return;
-      }
-      
-      // Final check right before creating notification - double-check for race conditions (simplified)
-      const finalNotificationCheck = query(
-        collection(db, 'notifications'),
-        where('recipientId', '==', winner.userId),
-        where('data.type', '==', 'payment_required')
-      );
-      
-      const finalNotificationSnapshot = await getDocs(finalNotificationCheck);
-      // Client-side filtering for listingId and timestamp
-      const finalRecentNotifications = finalNotificationSnapshot.docs.filter(doc => {
-        const data = doc.data();
-        const createdAt = data.createdAt?.toDate();
-        return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
-      });
-      
-      if (finalRecentNotifications.length > 0) {
-        const existingNotification = finalRecentNotifications[0];
-        return existingNotification.id;
+        console.log(`⏭️ Very recent notification already exists for winner ${winner.userId} and listing ${listing.id}`);
+        return recentNotifications[0].id;
       }
       
       // Create database notification
@@ -382,6 +392,7 @@ class ExpirationNotificationService {
         sellerId: listing.sellerId,
       };
       
+      console.log(`📬 Creating payment notification for winner ${winner.userId}`);
       const notificationId = await NotificationManager.createNotification(
         winner.userId,
         title,
@@ -389,27 +400,61 @@ class ExpirationNotificationService {
         notificationData
       );
       
+      if (notificationId) {
+        console.log(`✅ Payment notification created successfully: ${notificationId}`);
+      
       // Start payment timeout for the winner (this will create the payment record)
+        try {
       await PaymentTimeoutService.startPaymentTimeout(
         listing.id,
         winner.userId,
         winner.action,
         this.extractAmountFromDetails(winner.details)
       );
+          console.log(`✅ Payment timeout started for winner ${winner.userId}`);
+        } catch (timeoutError) {
+          console.error('❌ Error starting payment timeout:', timeoutError);
+          // Don't fail the whole process if timeout service fails
+        }
+      } else {
+        console.log(`⚠️ Notification creation returned null for winner ${winner.userId}`);
+      }
+      
+      return notificationId;
       
       } catch (error) {
       console.error('❌ Error notifying winner:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listing: listing?.id,
+        winner: winner?.userId
+      });
+      throw error; // Re-throw to ensure calling code knows about the failure
     }
   }
 
   // Notify seller about the winner
   async notifySellerAboutWinner(listing, winner) {
     try {
+      console.log(`🔔 Notifying seller ${listing.sellerId} about winner for listing ${listing.id}`);
+      
+      // Validate inputs
+      if (!listing || !listing.sellerId) {
+        console.error('❌ Invalid listing or seller data:', listing);
+        return;
+      }
+      
+      if (!winner || !winner.userName) {
+        console.error('❌ Invalid winner data:', winner);
+        return;
+      }
+      
       const title = `🏆 Winner Determined!`;
       const body = `Your listing "${listing.title}" has expired. ${winner.userName} won with ${winner.action} action. They will submit payment proof soon.`;
       
-      // Check if notification already exists (simplified query to avoid index requirement)
-      const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+      // Simplified duplicate check - only check for very recent notifications (within 5 minutes)
+      const fiveMinutesAgo = new Date(Date.now() - (5 * 60 * 1000));
       const existingNotificationQuery = query(
         collection(db, 'notifications'),
         where('recipientId', '==', listing.sellerId),
@@ -421,16 +466,16 @@ class ExpirationNotificationService {
       const recentNotifications = existingSnapshot.docs.filter(doc => {
         const data = doc.data();
         const createdAt = data.createdAt?.toDate();
-        return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
+        return createdAt && createdAt >= fiveMinutesAgo && data.data?.listingId === listing.id;
       });
       
       if (recentNotifications.length > 0) {
-        console.log(`⏭️ Recent notification already exists for seller ${listing.sellerId} and listing ${listing.id}`);
-        return;
+        console.log(`⏭️ Very recent notification already exists for seller ${listing.sellerId} and listing ${listing.id}`);
+        return recentNotifications[0].id;
       }
       
-      // Create database notification
-      await NotificationManager.createNotification(
+      console.log(`📬 Creating winner notification for seller ${listing.sellerId}`);
+      const notificationId = await NotificationManager.createNotification(
         listing.sellerId,
         title,
         body,
@@ -443,8 +488,24 @@ class ExpirationNotificationService {
         }
       );
       
+      if (notificationId) {
+        console.log(`✅ Winner notification created successfully for seller: ${notificationId}`);
+      } else {
+        console.log(`⚠️ Winner notification creation returned null for seller ${listing.sellerId}`);
+      }
+      
+      return notificationId;
+      
       } catch (error) {
       console.error('❌ Error notifying seller:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        code: error.code,
+        listing: listing?.id,
+        seller: listing?.sellerId,
+        winner: winner?.userId
+      });
+      throw error; // Re-throw to ensure calling code knows about the failure
     }
   }
 
@@ -493,8 +554,8 @@ class ExpirationNotificationService {
           continue;
         }
         
-        // Check if notification already exists for this user (simplified query to avoid index requirement)
-        const oneDayAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+        // Simplified duplicate check - only check for very recent notifications (within 5 minutes)
+        const fiveMinutesAgo = new Date(Date.now() - (5 * 60 * 1000));
         const existingNotificationQuery = query(
           collection(db, 'notifications'),
           where('recipientId', '==', userId),
@@ -506,29 +567,11 @@ class ExpirationNotificationService {
         const recentNotifications = existingSnapshot.docs.filter(doc => {
           const data = doc.data();
           const createdAt = data.createdAt?.toDate();
-          return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
+          return createdAt && createdAt >= fiveMinutesAgo && data.data?.listingId === listing.id;
         });
+        
         if (recentNotifications.length > 0) {
-          console.log(`⏭️ Recent notification already exists for user ${userId} and listing ${listing.id}`);
-          continue;
-        }
-        
-        // Final check right before creating notification - double-check for race conditions (simplified)
-        const finalCheckQuery = query(
-          collection(db, 'notifications'),
-          where('recipientId', '==', userId),
-          where('data.type', '==', 'listing_expired_lost')
-        );
-        
-        const finalCheckSnapshot = await getDocs(finalCheckQuery);
-        // Client-side filtering for listingId and timestamp
-        const finalRecentNotifications = finalCheckSnapshot.docs.filter(doc => {
-          const data = doc.data();
-          const createdAt = data.createdAt?.toDate();
-          return createdAt && createdAt >= oneDayAgo && data.data?.listingId === listing.id;
-        });
-        
-        if (finalRecentNotifications.length > 0) {
+          console.log(`⏭️ Very recent notification already exists for user ${userId} and listing ${listing.id}`);
           continue;
         }
         

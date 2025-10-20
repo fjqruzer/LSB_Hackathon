@@ -80,9 +80,9 @@ const OnboardingScreen = ({ onComplete }) => {
       title: 'How it works?',
       image: require('../assets/images/msl.png'),
       steps: [
-        // Changed to MaterialCommunityIcons icon names
+        
         { icon: 'cart-outline', text: 'Mine - Instantly claim an item' },
-        { icon: 'sword', text: 'Steal - Outbid and take it.' }, // Using 'sword' for 'steal' concept
+        { icon: 'sword', text: 'Steal - Outbid and take it.' }, 
         { icon: 'lock-outline', text: 'Lock - Secure the item at the highest price.' },
       ],
       showSmallLogo: false,

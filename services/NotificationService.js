@@ -160,13 +160,24 @@ class NotificationService {
   }
 
   // Save push token to user profile
-  async savePushTokenToUser(token) {
+  async savePushTokenToUser(token, userId) {
     try {
-      // Get current user from auth context
-      const { useAuth } = await import('../contexts/AuthContext');
-      // This is a bit tricky since we can't use hooks here
-      // We'll need to pass the user ID from the calling component
-      return null;
+      if (!userId) {
+        console.log('⚠️ No user ID provided for saving push token');
+        return null;
+      }
+
+      console.log('💾 Saving push token to user profile:', userId);
+      
+      // Update user document with push token
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        pushToken: token,
+        lastTokenUpdate: new Date().toISOString()
+      });
+      
+      console.log('✅ Push token saved successfully for user:', userId);
+      return true;
     } catch (error) {
       console.error('❌ Error saving push token:', error);
       return null;
