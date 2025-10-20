@@ -98,9 +98,9 @@ const OnboardingScreen = ({ onComplete }) => {
     {
       type: 'get-started',
       logo: require('../assets/images/logo.png'),
-      titlePart1: 'Pag nakita mo na, ',
-      titlePart2: 'COPit-in mo!',
-      buttonText: 'Get Started',
+      titlePart1: 'See it, ',
+      titlePart2: 'Like it?',
+      buttonText: 'CopIt!',
       showSmallLogo: false,
     },
   ];
