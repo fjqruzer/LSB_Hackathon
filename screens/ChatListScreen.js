@@ -290,11 +290,11 @@ const ChatListScreen = ({ navigation }) => {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, styles.loadingContainer, { backgroundColor: '#DFECE2' }]}>
+        <ActivityIndicator size="large" color="#83AFA7" />
         <Text style={[
           styles.loadingText,
-          { color: colors.text },
+          { color: '#333' },
           { fontFamily: fontsLoaded ? "Poppins-Medium" : undefined }
         ]}>
           Loading conversations...

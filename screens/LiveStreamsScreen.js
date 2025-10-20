@@ -175,7 +175,7 @@ const LiveStreamsScreen = ({ navigation }) => {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: theme.colors.background,
+      backgroundColor: '#DFECE2',
     },
     header: {
       flexDirection: 'row',
@@ -200,7 +200,7 @@ const LiveStreamsScreen = ({ navigation }) => {
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#83AFA7',
       justifyContent: 'center',
       alignItems: 'center',
       shadowColor: '#000',
