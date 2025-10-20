@@ -8,7 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 
 const UpdatesScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { notifications, unreadCount, markAsRead } = useNotificationListener();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationListener();
   const { colors } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const isMountedRef = useRef(true);
@@ -220,6 +220,14 @@ const UpdatesScreen = ({ navigation }) => {
           <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>Stay informed about your activity</Text>
         </View>
         <View style={styles.headerRight}>
+          {unreadCount > 0 && (
+            <TouchableOpacity 
+              style={styles.markAllButton}
+              onPress={markAllAsRead}
+            >
+              <Ionicons name="checkmark-done" size={24} color="#83AFA7" />
+            </TouchableOpacity>
+          )}
           <View style={{ position: 'relative' }}>
             <Ionicons name="notifications" size={28} color="#83AFA7" />
             {unreadCount > 0 && (
@@ -407,6 +415,10 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  markAllButton: {
+    padding: 4,
   },
   badge: {
     position: 'absolute',

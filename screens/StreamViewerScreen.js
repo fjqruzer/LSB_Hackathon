@@ -430,7 +430,7 @@ const StreamViewerScreen = ({ navigation, route }) => {
       marginBottom: 20,
     },
     retryButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
       paddingHorizontal: 20,
       paddingVertical: 10,
       borderRadius: 8,

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import BottomNavigation from './BottomNavigation';
 import MarketplaceScreen from '../screens/MarketplaceScreen';
 import ForYouScreen from '../screens/ForYouScreen';
@@ -497,9 +499,6 @@ const MainNavigationContent = () => {
     try {
       console.log('🔍 MainNavigation - Fetching listing for ID:', listingId);
       
-      // Import Firestore functions
-      const { doc, getDoc } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
       
       // Fetch listing from Firestore
       const listingDoc = await getDoc(doc(db, 'listings', listingId));

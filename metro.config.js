@@ -8,6 +8,9 @@ defaultConfig.resolver.sourceExts.push('cjs');
 // Disable package exports to avoid module resolution issues
 defaultConfig.resolver.unstable_enablePackageExports = false;
 
+// Ensure proper module resolution for Expo modules
+defaultConfig.resolver.platforms = ['ios', 'android', 'native', 'web'];
+
 // Add Firebase-specific resolver configuration
 defaultConfig.resolver.alias = {
   ...defaultConfig.resolver.alias,

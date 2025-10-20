@@ -3,6 +3,7 @@ import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestor
 import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
 import NotificationService from '../services/NotificationService';
+import NotificationManager from '../services/NotificationManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
 
@@ -215,10 +216,41 @@ export const NotificationListenerProvider = ({ children }) => {
 
   const markAsRead = async (notificationId) => {
     try {
-      // This would need to be implemented in NotificationManager
-      // Marking notification as read
+      
+      // Mark notification as read in Firestore
+      await NotificationManager.markAsRead(notificationId);
+      
+      // Update local state to reflect the change immediately
+      setNotifications(prevNotifications => 
+        prevNotifications.filter(notif => notif.id !== notificationId)
+      );
+      
+      // Update unread count
+      setUnreadCount(prevCount => Math.max(0, prevCount - 1));
+      
+      console.log('✅ Notification marked as read:', notificationId);
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      
+      // Mark all notifications as read
+      const markPromises = notifications.map(notif => 
+        NotificationManager.markAsRead(notif.id)
+      );
+      
+      await Promise.all(markPromises);
+      
+      // Clear local state
+      setNotifications([]);
+      setUnreadCount(0);
+      
+      console.log('✅ All notifications marked as read');
+    } catch (error) {
+      console.error('❌ Error marking all notifications as read:', error);
     }
   };
 
@@ -250,6 +282,7 @@ export const NotificationListenerProvider = ({ children }) => {
     notifications,
     unreadCount,
     markAsRead,
+    markAllAsRead,
     clearAllNotifications,
     setNavigationHandler
   };

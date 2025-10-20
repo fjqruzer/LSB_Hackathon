@@ -322,7 +322,7 @@ const BottomNavigation = ({ currentScreen, onScreenChange }) => {
                       transform: [{
                         rotate: expandAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: ['0deg', '135deg'],
+                          outputRange: ['0deg', '360deg'],
                         }),
                       }],
                     }}

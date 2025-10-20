@@ -179,11 +179,10 @@ const OnboardingScreen = ({ onComplete }) => {
                 </View>
                 <View style={styles.getStartedBottomContent}>
                   <Text style={styles.getStartedTitle}>
-                    <Text style={styles.getStartedTitlePart1}>{screen.titlePart1}</Text>
-                    {'\n'}
+                    <Text style={styles.getStartedTitlePart1}>See It. Like It. </Text>
                     <Text style={styles.getStartedTitlePart2}>COP</Text>
                     <Text style={styles.getStartedTitlePart3}>it</Text>
-                    <Text style={styles.getStartedTitlePart4}>-in mo na!</Text>
+                    <Text style={styles.getStartedTitlePart4}>!</Text>
                   </Text>
                                   <TouchableOpacity 
                   style={styles.getStartedButton}

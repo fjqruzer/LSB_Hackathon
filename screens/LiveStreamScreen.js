@@ -286,7 +286,7 @@ const LiveStreamScreen = ({ navigation, route }) => {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: theme.colors.background,
+      backgroundColor: '#DFECE2',
     },
     header: {
       flexDirection: 'row',
@@ -295,9 +295,9 @@ const LiveStreamScreen = ({ navigation, route }) => {
       paddingHorizontal: 20,
       paddingTop: insets.top + 10,
       paddingBottom: 15,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: '#DFECE2',
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
+      borderBottomColor: '#e0e0e0',
     },
     headerTitle: {
       fontSize: 18,
@@ -339,7 +339,7 @@ const LiveStreamScreen = ({ navigation, route }) => {
       justifyContent: 'space-around',
       alignItems: 'center',
       paddingVertical: 20,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: '#FFFFFF',
     },
     controlButton: {
       width: 50,
@@ -347,19 +347,19 @@ const LiveStreamScreen = ({ navigation, route }) => {
       borderRadius: 25,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
     },
     muteButton: {
-      backgroundColor: isMuted ? '#ff4444' : theme.colors.primary,
+      backgroundColor: isMuted ? '#ff4444' : '#F68652',
     },
     cameraButton: {
-      backgroundColor: isCameraOn ? theme.colors.primary : '#ff4444',
+      backgroundColor: isCameraOn ? '#F68652' : '#ff4444',
     },
     streamInfo: {
       padding: 20,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: '#FFFFFF',
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
+      borderBottomColor: '#e0e0e0',
     },
     streamTitle: {
       fontSize: 16,
@@ -380,7 +380,7 @@ const LiveStreamScreen = ({ navigation, route }) => {
     },
     chatContainer: {
       flex: 1,
-      backgroundColor: theme.colors.background,
+      backgroundColor: '#DFECE2',
     },
     chatHeader: {
       flexDirection: 'row',
@@ -388,9 +388,9 @@ const LiveStreamScreen = ({ navigation, route }) => {
       alignItems: 'center',
       paddingHorizontal: 20,
       paddingVertical: 15,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: '#FFFFFF',
       borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
+      borderBottomColor: '#e0e0e0',
     },
     chatTitle: {
       fontSize: 16,
@@ -432,9 +432,9 @@ const LiveStreamScreen = ({ navigation, route }) => {
       alignItems: 'center',
       paddingHorizontal: 20,
       paddingVertical: 15,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: '#FFFFFF',
       borderTopWidth: 1,
-      borderTopColor: theme.colors.border,
+      borderTopColor: '#e0e0e0',
     },
     textInput: {
       flex: 1,
@@ -446,7 +446,7 @@ const LiveStreamScreen = ({ navigation, route }) => {
       fontSize: 14,
       fontFamily: 'Poppins-Regular',
       color: theme.colors.text,
-      backgroundColor: theme.colors.background,
+      backgroundColor: '#ffffff',
     },
     sendButton: {
       marginLeft: 10,
@@ -473,14 +473,14 @@ const LiveStreamScreen = ({ navigation, route }) => {
       fontSize: 14,
       fontFamily: 'Poppins-Regular',
       color: theme.colors.text,
-      backgroundColor: theme.colors.background,
+      backgroundColor: '#ffffff',
     },
     textArea: {
       height: 80,
       textAlignVertical: 'top',
     },
     startButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: '#F68652',
       paddingVertical: 15,
       borderRadius: 8,
       alignItems: 'center',

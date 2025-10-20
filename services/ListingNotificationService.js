@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 class ListingNotificationService {
@@ -14,8 +14,6 @@ class ListingNotificationService {
         read: false
       };
       
-      const { collection, addDoc } = await import('firebase/firestore');
-      const { db } = await import('../config/firebase');
       
       const docRef = await addDoc(collection(db, 'notifications'), notificationData);
       return docRef.id;
