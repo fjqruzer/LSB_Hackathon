@@ -1,4 +1,4 @@
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { AppState } from 'react-native';
 
@@ -40,11 +40,24 @@ class PresenceService {
 
     try {
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, {
-        isOnline: true,
-        lastSeen: serverTimestamp(),
-        presenceUpdatedAt: serverTimestamp()
-      });
+      try {
+        await updateDoc(userRef, {
+          isOnline: true,
+          lastSeen: serverTimestamp(),
+          presenceUpdatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        // If document doesn't exist, create it with merge semantics
+        if (err?.code === 'not-found' || /No document to update/i.test(err?.message || '')) {
+          await setDoc(userRef, {
+            isOnline: true,
+            lastSeen: serverTimestamp(),
+            presenceUpdatedAt: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw err;
+        }
+      }
       
       this.isOnline = true;
       console.log('🟢 PresenceService: User set as online:', userId);
@@ -59,11 +72,23 @@ class PresenceService {
 
     try {
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, {
-        isOnline: false,
-        lastSeen: serverTimestamp(),
-        presenceUpdatedAt: serverTimestamp()
-      });
+      try {
+        await updateDoc(userRef, {
+          isOnline: false,
+          lastSeen: serverTimestamp(),
+          presenceUpdatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        if (err?.code === 'not-found' || /No document to update/i.test(err?.message || '')) {
+          await setDoc(userRef, {
+            isOnline: false,
+            lastSeen: serverTimestamp(),
+            presenceUpdatedAt: serverTimestamp()
+          }, { merge: true });
+        } else {
+          throw err;
+        }
+      }
       
       this.isOnline = false;
       console.log('🔴 PresenceService: User set as offline:', userId);

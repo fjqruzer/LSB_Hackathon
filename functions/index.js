@@ -3,6 +3,92 @@ const admin = require('firebase-admin');
 
 // Initialize Firebase Admin
 admin.initializeApp();
+// PayMongo helpers
+const getPaymongoKeys = () => {
+  const publicKey = functions.config().paymongo?.pk || process.env.PAYMONGO_PK || 'pk_test_hZW72y1QVo1JX952Hq9GGw32';
+  const secretKey = functions.config().paymongo?.sk || process.env.PAYMONGO_SK || 'sk_test_5cR1kAQMToC5eTVZS2Pkp8FE';
+  return { publicKey, secretKey };
+};
+
+// Create a PayMongo Payment Link
+exports.createPaymongoPaymentLink = functions.https.onCall(async (data, context) => {
+  try {
+    const { amount, description, remarks, email } = data || {};
+    if (!amount || amount <= 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'Valid amount is required');
+    }
+    const { secretKey } = getPaymongoKeys();
+
+    const body = {
+      data: {
+        attributes: {
+          amount: Math.round(Number(amount) * 100), // PayMongo expects cents
+          description: description || 'COPit Order Payment',
+          remarks: remarks || 'Delivery payment via PayMongo',
+          ...(email ? { billing: { email } } : {}),
+        }
+      }
+    };
+
+    const response = await fetch('https://api.paymongo.com/v1/links', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const json = await response.json();
+    if (!response.ok) {
+      throw new functions.https.HttpsError('internal', `PayMongo error: ${json.errors ? JSON.stringify(json.errors) : 'Unknown error'}`);
+    }
+
+    const link = json?.data;
+    return {
+      success: true,
+      linkId: link.id,
+      checkoutUrl: link.attributes.checkout_url,
+    };
+  } catch (err) {
+    console.error('Error creating PayMongo link:', err);
+    if (err instanceof functions.https.HttpsError) throw err;
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
+
+// Check PayMongo Payment Link status
+exports.getPaymongoPaymentLink = functions.https.onCall(async (data, context) => {
+  try {
+    const { linkId } = data || {};
+    if (!linkId) {
+      throw new functions.https.HttpsError('invalid-argument', 'linkId is required');
+    }
+    const { secretKey } = getPaymongoKeys();
+
+    const response = await fetch(`https://api.paymongo.com/v1/links/${linkId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+      },
+    });
+    const json = await response.json();
+    if (!response.ok) {
+      throw new functions.https.HttpsError('internal', `PayMongo error: ${json.errors ? JSON.stringify(json.errors) : 'Unknown error'}`);
+    }
+    const link = json?.data;
+    const paid = (link?.attributes?.payments?.length || 0) > 0;
+    return {
+      success: true,
+      paid,
+      raw: link,
+    };
+  } catch (err) {
+    console.error('Error fetching PayMongo link:', err);
+    if (err instanceof functions.https.HttpsError) throw err;
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});
 
 // Brevo email service
 const sendEmail = async (toEmail, subject, htmlContent, textContent) => {

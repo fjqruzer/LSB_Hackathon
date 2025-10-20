@@ -21,6 +21,7 @@ import MainNavigation from './components/MainNavigation';
 import NotificationService from './services/NotificationService';
 import ExpirationNotificationService from './services/ExpirationNotificationService';
 import ExpirationCheckService from './services/ExpirationCheckService';
+import PaymentTimeoutService from './services/PaymentTimeoutService';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, auth } from './config/firebase';
 
@@ -94,24 +95,27 @@ function AppNavigator() {
 
   // Initialize notifications and expiration check service
   useEffect(() => {
-    // Only run if user is logged in
-    if (!user) {
-      console.log('⚠️ No user logged in, skipping service initialization');
-      return;
-    }
-
     const initializeServices = async () => {
       try {
-        // Ensure Firebase is initialized before proceeding
-        console.log('🔥 Initializing Firebase services...');
-        console.log('👤 Current user:', user.uid);
+        // Always start expiration check service regardless of user login status
+        console.log('🚀 Starting ExpirationCheckService from App.js...');
+        ExpirationCheckService.start();
+        console.log('📊 ExpirationCheckService status after start:', ExpirationCheckService.getStatus());
         
-        const token = await NotificationService.registerForPushNotificationsAsync();
-        console.log('📱 Received token from NotificationService:', token);
-        console.log('📱 Token type:', typeof token);
-        console.log('📱 Token length:', token ? token.length : 'null');
+        // Start expired payment cleanup service
+        console.log('🚀 Starting PaymentTimeoutService from App.js...');
+        PaymentTimeoutService.startExpiredPaymentCleanup();
         
+        // Only initialize push notifications if user is logged in
         if (user) {
+          console.log('🔥 Initializing Firebase services for logged-in user...');
+          console.log('👤 Current user:', user.uid);
+          
+          const token = await NotificationService.registerForPushNotificationsAsync();
+          console.log('📱 Received token from NotificationService:', token);
+          console.log('📱 Token type:', typeof token);
+          console.log('📱 Token length:', token ? token.length : 'null');
+          
           // Determine if this is a valid push token
           const isValidPushToken = token && 
             token.startsWith('ExponentPushToken[') && 
@@ -159,15 +163,9 @@ function AppNavigator() {
             console.error('❌ Error saving push token to user profile:', error);
           }
         } else {
-          console.log('⚠️ No user logged in, skipping token storage');
+          console.log('⚠️ No user logged in, skipping push notification setup');
+          console.log('✅ Expiration check service started (works without user login)');
         }
-        
-        // Start expiration check service
-        ExpirationCheckService.start();
-        
-        // Start expired payment cleanup service
-        const { default: PaymentTimeoutService } = await import('./services/PaymentTimeoutService');
-        PaymentTimeoutService.startExpiredPaymentCleanup();
       } catch (error) {
         console.error('Error initializing services:', error);
       }

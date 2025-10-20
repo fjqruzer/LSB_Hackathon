@@ -19,8 +19,16 @@ import { useFonts } from 'expo-font';
 import { useAuth } from '../contexts/AuthContext';
 import { doc, getDoc, updateDoc, serverTimestamp, addDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import app from '../config/firebase';
+import { Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImageToCloudinary } from '../config/cloudinary';
+// Buffer polyfill for React Native (for Basic auth header in fallback)
+import { Buffer } from 'buffer';
+if (typeof global !== 'undefined' && !global.Buffer) {
+  global.Buffer = Buffer;
+}
 import PaymentTimeoutService from '../services/PaymentTimeoutService';
 import NotificationManager from '../services/NotificationManager';
 import StandardModal from '../components/StandardModal';
@@ -806,6 +814,148 @@ const PaymentScreen = ({ navigation, route }) => {
     setSubmitting(true);
 
     try {
+      // If delivery, collect payment via PayMongo before submitting
+      if (listing?.dealMethod === 'delivery') {
+        try {
+          // Try default region first, then fallback to asia-southeast1
+          let functionsInst = getFunctions(app);
+          let createLink = httpsCallable(functionsInst, 'createPaymongoPaymentLink');
+          const amountNumber = Number(displayPrice);
+          const res = await createLink({
+            amount: amountNumber,
+            description: `Payment for ${listing?.title || 'item'}`,
+            remarks: `Listing ${listingId}`,
+            email: user.email,
+          });
+          const { checkoutUrl, linkId } = res.data || {};
+          if (!checkoutUrl || !linkId) {
+            throw new Error('Failed to create PayMongo link');
+          }
+          await Linking.openURL(checkoutUrl);
+
+          // Poll a few times for payment completion
+          let getLink = httpsCallable(functionsInst, 'getPaymongoPaymentLink');
+          let paid = false;
+          let paymongoLinkId = linkId;
+          for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 3000));
+            const statusRes = await getLink({ linkId });
+            if (statusRes.data?.paid) {
+              paid = true;
+              break;
+            }
+          }
+          if (!paid) {
+            Alert.alert('Payment Pending', 'We could not confirm your PayMongo payment yet. Please complete checkout and try again.');
+            setSubmitting(false);
+            return;
+          }
+          // Mark as PayMongo paid for downstream persistence
+          var __paymongo = { paid: true, linkId: paymongoLinkId, amount: amountNumber };
+        } catch (pmErr) {
+          // Retry with asia-southeast1 region if function not found
+          try {
+            if (pmErr?.code === 'functions/not-found' || /not found/i.test(pmErr?.message || '')) {
+              let functionsASE = getFunctions(app, 'asia-southeast1');
+              const createLinkASE = httpsCallable(functionsASE, 'createPaymongoPaymentLink');
+              const amountNumber = Number(displayPrice);
+              const res = await createLinkASE({
+                amount: amountNumber,
+                description: `Payment for ${listing?.title || 'item'}`,
+                remarks: `Listing ${listingId}`,
+                email: user.email,
+              });
+              const { checkoutUrl, linkId } = res.data || {};
+              if (!checkoutUrl || !linkId) {
+                throw new Error('Failed to create PayMongo link');
+              }
+              await Linking.openURL(checkoutUrl);
+              const getLinkASE = httpsCallable(functionsASE, 'getPaymongoPaymentLink');
+              let paid = false;
+              let paymongoLinkId = linkId;
+              for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 3000));
+                const statusRes = await getLinkASE({ linkId });
+                if (statusRes.data?.paid) {
+                  paid = true;
+                  break;
+                }
+              }
+              if (!paid) {
+                Alert.alert('Payment Pending', 'We could not confirm your PayMongo payment yet. Please complete checkout and try again.');
+                setSubmitting(false);
+                return;
+              }
+              var __paymongo = { paid: true, linkId: paymongoLinkId, amount: amountNumber };
+            } else {
+              throw pmErr;
+            }
+          } catch (retryErr) {
+            // Final fallback: call PayMongo API directly (test keys)
+            try {
+              const secretKey = 'sk_test_5cR1kAQMToC5eTVZS2Pkp8FE';
+              const amountNumber = Number(displayPrice);
+              const body = {
+                data: {
+                  attributes: {
+                    amount: Math.round(amountNumber * 100),
+                    description: `Payment for ${listing?.title || 'item'}`,
+                    remarks: `Listing ${listingId}`,
+                    billing: { email: user.email },
+                  }
+                }
+              };
+              const resp = await fetch('https://api.paymongo.com/v1/links', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+                },
+                body: JSON.stringify(body),
+              });
+              const json = await resp.json();
+              if (!resp.ok) {
+                throw new Error(json?.errors ? JSON.stringify(json.errors) : 'PayMongo link creation failed');
+              }
+              const link = json?.data;
+              const checkoutUrl = link?.attributes?.checkout_url;
+              const linkId = link?.id;
+              if (!checkoutUrl || !linkId) {
+                throw new Error('Invalid PayMongo response');
+              }
+              await Linking.openURL(checkoutUrl);
+              // Optional: poll PayMongo directly for confirmation
+              let paid = false;
+              let paymongoLinkId = linkId;
+              for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 3000));
+                const statusResp = await fetch(`https://api.paymongo.com/v1/links/${linkId}`, {
+                  method: 'GET',
+                  headers: {
+                    Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+                  },
+                });
+                const statusJson = await statusResp.json();
+                if (statusResp.ok) {
+                  const paidCount = statusJson?.data?.attributes?.payments?.length || 0;
+                  if (paidCount > 0) { paid = true; break; }
+                }
+              }
+              if (!paid) {
+                Alert.alert('Payment Pending', 'We could not confirm your PayMongo payment yet. Please complete checkout and try again.');
+                setSubmitting(false);
+                return;
+              }
+              var __paymongo = { paid: true, linkId: paymongoLinkId, amount: amountNumber };
+            } catch (finalErr) {
+              console.error('PayMongo error (fallback):', finalErr);
+              Alert.alert('Payment Error', 'Unable to process PayMongo payment. Please try again.');
+              setSubmitting(false);
+              return;
+            }
+          }
+        }
+      }
       let paymentProofUrl = null;
       
       // Only upload if payment proof is provided
@@ -869,6 +1019,11 @@ const PaymentScreen = ({ navigation, route }) => {
           status: 'submitted',
           submittedAt: serverTimestamp(),
           lastUpdated: serverTimestamp(),
+          ...(typeof __paymongo !== 'undefined' && __paymongo?.paid ? {
+            paymongoPaid: true,
+            paymongoLinkId: __paymongo.linkId,
+            paymongoAmount: __paymongo.amount,
+          } : {}),
         };
         
         await updateDoc(doc(db, 'payments', existingPayment.id), paymentData);
@@ -963,6 +1118,11 @@ const PaymentScreen = ({ navigation, route }) => {
           status: 'submitted',
           submittedAt: serverTimestamp(),
           createdAt: serverTimestamp(),
+          ...(typeof __paymongo !== 'undefined' && __paymongo?.paid ? {
+            paymongoPaid: true,
+            paymongoLinkId: __paymongo.linkId,
+            paymongoAmount: __paymongo.amount,
+          } : {}),
         };
 
         console.log('💳 Creating payment with data:', {

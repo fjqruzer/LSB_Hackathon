@@ -481,6 +481,12 @@ const PaymentApprovalScreen = ({ navigation }) => {
                     <Text style={[styles.compactAmount, { fontFamily: fontsLoaded ? "Poppins-Bold" : undefined }]}>
                       {formatCurrency(payment.amount || 0)}
                     </Text>
+                    {payment.paymongoPaid && (
+                      <View style={styles.paymongoBadge}>
+                        <Ionicons name="card" size={14} color="#4CAF50" />
+                        <Text style={[styles.paymongoBadgeText, { fontFamily: fontsLoaded ? 'Poppins-Medium' : undefined }]}>Paid</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
@@ -1004,6 +1010,21 @@ const styles = StyleSheet.create({
   compactAmount: {
     fontSize: 16,
     color: '#83AFA7',
+  },
+  paymongoBadge: {
+    marginTop: 4,
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  paymongoBadgeText: {
+    color: '#2E7D32',
+    fontSize: 11,
   },
   actionIcons: {
     flexDirection: 'row',
